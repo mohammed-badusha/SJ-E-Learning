@@ -1,0 +1,56 @@
+{
+  "cues": {
+    "select": {
+      "duration_seconds": 0.5,
+      "prompt": "One very short soft tactile wooden button click for a quiz answer selection. Dry, light, rounded, instant onset, no ringing, no voice, no ambience, no melody. One click only."
+    },
+    "correct": {
+      "duration_seconds": 0.8,
+      "prompt": "One friendly quiz correct-answer cue: two clean ascending marimba notes with a soft glass accent, warm and satisfying, restrained volume, instant onset, short decay, no voice, no background noise."
+    },
+    "wrong": {
+      "duration_seconds": 0.65,
+      "prompt": "One gentle incorrect-answer cue for an educational quiz: two soft descending muted synth notes, thoughtful rather than punishing, no harsh buzzer, no alarm, no voice, dry instant onset."
+    },
+    "tick": {
+      "duration_seconds": 0.5,
+      "prompt": "One soft isolated clock tick for the final three seconds of a quiz timer. Brief rounded wooden tick, clean and precise, no alarm, no ambience, no voice, exactly one tick."
+    },
+    "match_found": {
+      "duration_seconds": 1.2,
+      "prompt": "A short friendly competitive quiz match-found cue. A crisp soft whoosh resolving into a clean ascending three-note mallet chord. Energetic but subtle, no voice, no fanfare, clean dry sound."
+    },
+    "question_start": {
+      "duration_seconds": 0.5,
+      "prompt": "One quiet crisp question-ready cue for a learning app. A single warm plucked synth note with a soft click, immediate onset and fast decay, no voice, no ambience."
+    },
+    "final_round": {
+      "duration_seconds": 1.1,
+      "prompt": "A short focused final-round quiz cue. Two warm low tom taps followed by a bright rising mallet note. Encouraging, controlled and brief, no tense alarm, no voice, no background music."
+    },
+    "win": {
+      "duration_seconds": 2.0,
+      "prompt": "A short original quiz victory cue: a warm ascending major-pentatonic marimba flourish resolving to a light bell chord. Celebratory, refined and compact, no orchestra, no voice, no applause."
+    },
+    "loss": {
+      "duration_seconds": 1.1,
+      "prompt": "A gentle end-of-round learning cue: a descending two-note warm electric piano phrase resolving calmly. Encouraging and relaxed, no sad trombone, no buzzer, no voice."
+    },
+    "draw": {
+      "duration_seconds": 1.1,
+      "prompt": "A short balanced draw-result cue for a friendly quiz duel: two alternating clean mallet tones resolving into a warm unison chord. Calm, positive, no voice, no ambience."
+    },
+    "level_up": {
+      "duration_seconds": 1.4,
+      "prompt": "A short original level-up reward sound for an education app: four ascending soft glass and marimba notes with a light shimmering final note. Refined and satisfying, no voice, no long tail."
+    },
+    "timeout": {
+      "duration_seconds": 0.7,
+      "prompt": "One gentle quiz timer-ended cue: a short soft wooden click followed by a low warm muted note, clear without being alarming, instant onset, no voice, no harsh buzz."
+    }
+  },
+  "music": {
+    "duration_seconds": 30,
+    "prompt": "Original instrumental background loop for SJ E-Learning, a friendly competitive-exam quiz app. Exactly 30 seconds, 96 BPM, twelve bars of 4/4. Warm plucked marimba and soft electric piano, restrained light percussion, gentle rounded bass, sparse optimistic pentatonic motif. Focused, engaging and quietly competitive. Consistent low intensity with plenty of space for question reading and UI sound effects. Begin on a clean bar boundary and finish with a matching tonic and groove for seamless looping. No vocals, speech, lyrics, large builds, dramatic drops, harsh treble or sudden loud events."
+  }
+}

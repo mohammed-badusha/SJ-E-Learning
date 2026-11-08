@@ -1,0 +1,37 @@
+name: App checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  flutter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.35.5'
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: dart run build_runner build --delete-conflicting-outputs
+      - run: flutter analyze --fatal-infos
+      - run: flutter test
+      - run: flutter build web --release
+      - run: flutter build apk --debug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sj-learning-debug
+          path: |
+            build/app/outputs/flutter-apk/app-debug.apk
+            docs/screenshots/
+  postgres:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: tools/db-check/package-lock.json
+      - run: npm ci --prefix tools/db-check
+      - run: npm test --prefix tools/db-check

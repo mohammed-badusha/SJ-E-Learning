@@ -1,0 +1,13 @@
+{
+  "flutter_tests": 20,
+  "postgres_checks": 23,
+  "analyzer": "zero issues",
+  "android_build": "debug arm64 succeeded",
+  "web_build": "release succeeded",
+  "hosted_report_migration": "owner confirmed success",
+  "usb_install": "Moto g64 succeeded",
+  "native_launch": "signed-in home confirmed",
+  "audio_secret_in_android_or_web": false,
+  "live_two_device_test": "not performed",
+  "apk_sha256": "75c28967bc91f3b8c88a1b60eec574dba816b2c2c2b097f7d423663327a71891"
+}
