@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import '../../../core/theme.dart';
 import '../../../shared/widgets.dart';
+import '../../../shared/arena_panel.dart';
 import '../../auth/data/session.dart';
 import '../../practice/data/quiz_repository.dart';
 
@@ -16,25 +17,48 @@ class CategoryScreen extends ConsumerStatefulWidget {
 
 class _CategoryState extends ConsumerState<CategoryScreen> {
   late Future<List<QuizCategory>> future;
+  Future<List<Map<String, dynamic>>>? topics;
   String selected = 'mixed';
   String? topic;
   bool timed = true;
+  QuizRepository get repo => QuizRepository(ref.read(sessionProvider));
   @override
   void initState() {
     super.initState();
-    load();
     if (Hive.isBoxOpen('preferences')) {
       selected = Hive.box('preferences').get('category', defaultValue: 'mixed');
     }
+    load();
   }
 
-  void load() =>
-      future = QuizRepository(ref.read(sessionProvider)).categories();
+  void load() => future = repo.categories();
+  void choose(String id) {
+    setState(() {
+      selected = id;
+      topic = null;
+      topics = id == 'mixed' ? null : repo.subtopics(id);
+    });
+    if (Hive.isBoxOpen('preferences')) {
+      Hive.box('preferences').put('category', id);
+    }
+  }
+
+  void start() => context.push(
+    Uri(
+      path: widget.mode == 'battle' ? '/matchmaking' : '/quiz',
+      queryParameters: {
+        'category': selected,
+        'mode': 'practice',
+        'timed': '$timed',
+        if (topic != null) 'subtopic': topic!,
+      },
+    ).toString(),
+  );
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
+    appBar: ArenaBar(
       title: Text(
-        widget.mode == 'battle' ? 'Choose a category' : 'Practice by subject',
+        widget.mode == 'battle' ? 'Build your battle' : 'Find your focus',
       ),
     ),
     body: PageBody(
@@ -44,8 +68,8 @@ class _CategoryState extends ConsumerState<CategoryScreen> {
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return EmptyState(
-              title: 'Categories couldn’t load',
-              message: 'Check your connection and try again.',
+              title: 'Subjects couldn’t load',
+              message: 'Reconnect and try again.',
               action: OutlinedButton(
                 onPressed: () => setState(load),
                 child: const Text('Retry'),
@@ -53,151 +77,210 @@ class _CategoryState extends ConsumerState<CategoryScreen> {
             );
           }
           if (!snapshot.hasData) return const SkeletonList();
-          final categories = [...snapshot.data!, mixedCategory];
-          return ListView(
-            padding: const EdgeInsets.all(24),
+          final categories = [mixedCategory, ...snapshot.data!];
+          if (!categories.any((c) => c.id == selected)) {
+            selected = 'mixed';
+            topic = null;
+            topics = null;
+          }
+          if (selected != 'mixed') topics ??= repo.subtopics(selected);
+          return Column(
             children: [
-              Text('Choose a subject', style: context.type.headlineMedium),
-              const SizedBox(height: 8),
-              Text(
-                widget.mode == 'battle'
-                    ? 'Select a category for your next battle'
-                    : 'Practise with explanations at your own pace',
-                style: TextStyle(color: context.tokens.muted),
-              ),
-              const SizedBox(height: 24),
-              ...categories.map(
-                (category) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Semantics(
-                    selected: selected == category.id,
-                    child: Material(
-                      color: selected == category.id
-                          ? context.tokens.raised
-                          : context.tokens.card,
-                      borderRadius: BorderRadius.circular(12),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () {
-                          setState(() {
-                            selected = category.id;
-                            topic = null;
-                          });
-                          if (Hive.isBoxOpen('preferences')) {
-                            Hive.box('preferences').put('category', selected);
-                          }
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: selected == category.id
-                                  ? Theme.of(context).colorScheme.primary
-                                  : context.tokens.line,
-                              width: selected == category.id ? 1.5 : 1,
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.all(20),
+                  children: [
+                    if (widget.mode == 'battle') ...[
+                      ArenaPanel(
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '1v1 match',
+                                    style: context.type.bodyMedium?.copyWith(
+                                      color: arenaMint,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    categories
+                                        .firstWhere((c) => c.id == selected)
+                                        .name,
+                                    style: context.type.headlineSmall?.copyWith(
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  const Text(
+                                    'Timed questions · Speed bonus',
+                                    style: TextStyle(color: Color(0xffdce2fb)),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                          child: Row(
-                            children: [
-                              SizedBox(
-                                width: 24,
-                                child: Icon(
-                                  category.icon,
-                                  color: context.tokens.secondary,
-                                  size: 20,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Container(
-                                width: 4,
-                                height: 4,
-                                decoration: BoxDecoration(
-                                  color: category.color,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Text(
-                                  category.name,
-                                  style: context.type.titleMedium,
-                                ),
-                              ),
-                              Icon(
-                                selected == category.id
-                                    ? Icons.check_circle_rounded
-                                    : Icons.circle_outlined,
-                                color: selected == category.id
-                                    ? Theme.of(context).colorScheme.primary
-                                    : context.tokens.muted,
-                              ),
-                            ],
-                          ),
+                            Image.asset(
+                              'assets/arena/duel.webp',
+                              width: 76,
+                              height: 76,
+                              excludeFromSemantics: true,
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                  ),
-                ),
-              ),
-              if (selected != 'mixed')
-                FutureBuilder(
-                  future: QuizRepository(
-                    ref.read(sessionProvider),
-                  ).subtopics(selected),
-                  builder: (context, snapshot) => Wrap(
-                    spacing: 8,
-                    children: [
-                      ChoiceChip(
-                        label: const Text('All topics'),
-                        selected: topic == null,
-                        onSelected: (_) => setState(() => topic = null),
+                      const SizedBox(height: 22),
+                    ],
+                    Text('Choose a subject', style: context.type.titleLarge),
+                    const SizedBox(height: 12),
+                    ArenaCard(
+                      padding: EdgeInsets.zero,
+                      child: Column(
+                        children: [
+                          for (final category in categories) ...[
+                            if (category != categories.first)
+                              const Divider(indent: 68),
+                            _SubjectChoice(
+                              category: category,
+                              selected: selected == category.id,
+                              onTap: () => choose(category.id),
+                            ),
+                          ],
+                        ],
                       ),
-                      ...?snapshot.data?.map(
-                        (t) => ChoiceChip(
-                          label: Text(t['name']),
-                          selected: topic == t['id'],
-                          onSelected: (_) => setState(() => topic = t['id']),
+                    ),
+                    if (topics != null) ...[
+                      const SizedBox(height: 24),
+                      Text(
+                        'Narrow your focus',
+                        style: context.type.titleMedium,
+                      ),
+                      const SizedBox(height: 12),
+                      FutureBuilder(
+                        future: topics,
+                        builder: (context, snapshot) {
+                          if (snapshot.hasError) {
+                            return TextButton(
+                              onPressed: () => setState(
+                                () => topics = repo.subtopics(selected),
+                              ),
+                              child: const Text('Retry loading topics'),
+                            );
+                          }
+                          return Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              ChoiceChip(
+                                label: const Text('All topics'),
+                                selected: topic == null,
+                                onSelected: (_) => setState(() => topic = null),
+                              ),
+                              ...?snapshot.data?.map(
+                                (t) => ChoiceChip(
+                                  label: Text(t['name']),
+                                  selected: topic == t['id'],
+                                  onSelected: (_) =>
+                                      setState(() => topic = t['id']),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ],
+                    if (widget.mode == 'practice') ...[
+                      const SizedBox(height: 24),
+                      ArenaCard(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 6,
+                        ),
+                        child: SwitchListTile.adaptive(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Practise with a timer'),
+                          subtitle: const Text(
+                            'Turn off for a more relaxed session',
+                          ),
+                          value: timed,
+                          onChanged: (value) => setState(() => timed = value),
                         ),
                       ),
                     ],
-                  ),
-                ),
-              if (widget.mode == 'practice')
-                SwitchListTile.adaptive(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Question timer'),
-                  subtitle: const Text(
-                    'Turn off the timer for untimed practice',
-                  ),
-                  value: timed,
-                  onChanged: (v) => setState(() => timed = v),
-                ),
-              const SizedBox(height: 24),
-              PrimaryButton(
-                label: widget.mode == 'battle'
-                    ? 'Find opponent'
-                    : 'Start practice',
-                icon: widget.mode == 'battle'
-                    ? Icons.bolt_rounded
-                    : Icons.play_arrow_rounded,
-                onPressed: () => context.push(
-                  Uri(
-                    path: widget.mode == 'battle' ? '/matchmaking' : '/quiz',
-                    queryParameters: {
-                      'category': selected,
-                      'mode': 'practice',
-                      'timed': '$timed',
-                      if (topic != null) 'subtopic': topic!,
-                    },
-                  ).toString(),
+                    const SizedBox(height: 12),
+                  ],
                 ),
               ),
-              const SizedBox(height: 24),
+              Container(
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
+                decoration: BoxDecoration(
+                  color: context.tokens.card,
+                  border: Border(top: BorderSide(color: context.tokens.line)),
+                ),
+                child: PrimaryButton(
+                  label: widget.mode == 'battle'
+                      ? 'Find my opponent'
+                      : 'Start practice',
+                  icon: widget.mode == 'battle'
+                      ? Icons.bolt_rounded
+                      : Icons.play_arrow_rounded,
+                  onPressed: start,
+                ),
+              ),
             ],
           );
         },
       ),
     ),
   );
+}
+
+class _SubjectChoice extends StatelessWidget {
+  const _SubjectChoice({
+    required this.category,
+    required this.selected,
+    required this.onTap,
+  });
+  final QuizCategory category;
+  final bool selected;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    return Semantics(
+      selected: selected,
+      child: ListTile(
+        onTap: onTap,
+        leading: DecoratedBox(
+          decoration: BoxDecoration(
+            color: category.color.withValues(alpha: .12),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(9),
+            child: Icon(
+              category.icon,
+              size: 22,
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? context.tokens.ink
+                  : category.color,
+            ),
+          ),
+        ),
+        title: Text(
+          category.id == 'mixed' ? 'All subjects' : category.name,
+          style: context.type.titleSmall,
+        ),
+        trailing: Icon(
+          selected
+              ? Icons.check_circle_rounded
+              : Icons.radio_button_off_rounded,
+          size: 22,
+          color: selected ? primary : context.tokens.muted,
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 4),
+      ),
+    );
+  }
 }

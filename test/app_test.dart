@@ -4,7 +4,7 @@ import 'support/fake_audio.dart';
 import 'dart:ui' show ImageByteFormat;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart';
+import 'support/load_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:quiz_arena/core/theme.dart';
@@ -22,16 +22,7 @@ import 'package:quiz_arena/shared/widgets.dart';
 import 'package:go_router/go_router.dart';
 
 void main() {
-  setUpAll(() async {
-    await (FontLoader(
-      'MaterialIcons',
-    )..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'))).load();
-    for (final font in ['Inter', 'PlusJakartaSans']) {
-      await (FontLoader(
-        font,
-      )..addFont(rootBundle.load('assets/fonts/$font.ttf'))).load();
-    }
-  });
+  setUpAll(loadAppFonts);
   test('Light is the default appearance', () {
     final session = SessionController(null);
     expect(session.themeMode, ThemeMode.light);

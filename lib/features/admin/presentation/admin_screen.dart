@@ -1,4 +1,7 @@
 import 'dart:convert';
+import 'admin_directory.dart';
+import 'question_import_screen.dart';
+import '../../../shared/arena_panel.dart';
 import 'package:csv/csv.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:excel/excel.dart' hide Border;
@@ -51,9 +54,12 @@ class _AdminState extends ConsumerState<AdminScreen> {
   void load() {
     future = switch (section) {
       0 => repo.rpc('admin_dashboard'),
-      1 => repo.rpc('admin_questions', {'search': query}),
+      1 => repo.rpc('admin_question_groups', {'search': query}),
       2 => repo.categories().then((c) => {'categories': c}),
-      3 => repo.rpc('admin_list_users', {'search': query}),
+      3 =>
+        repo.session.role == AdminRole.superAdmin
+            ? repo.rpc('admin_list_users')
+            : Future.value(<String, dynamic>{}),
       4 => repo.rpc('admin_reports'),
       6 => repo.rpc('admin_daily_calendar'),
       7 => repo.rpc('admin_analytics'),
@@ -69,6 +75,34 @@ class _AdminState extends ConsumerState<AdminScreen> {
   Future<void> openEditor([Map<String, dynamic>? question]) async {
     await context.push('/admin/question', extra: question);
     if (mounted) setState(load);
+  }
+
+  Future<void> openBank(String? id, String title) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => AdminDirectory(
+          repo: repo,
+          categoryId: id,
+          title: title,
+          initialSearch: id == null ? '' : query,
+        ),
+      ),
+    );
+    if (mounted) setState(load);
+  }
+
+  Future<void> importJson() async {
+    final message = await Navigator.push(
+      context,
+      MaterialPageRoute<String>(
+        builder: (_) => QuestionImportScreen(repo: repo),
+      ),
+    );
+    if (mounted && message != null) {
+      showMessage(context, message);
+      setState(load);
+    }
   }
 
   Future<void> roleDialog() async {
@@ -391,6 +425,7 @@ class _AdminState extends ConsumerState<AdminScreen> {
   Widget build(BuildContext context) {
     final role = ref.watch(sessionProvider).role;
     final content = FutureBuilder(
+      key: ValueKey(section),
       future: future,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
@@ -416,18 +451,6 @@ class _AdminState extends ConsumerState<AdminScreen> {
                     style: context.type.headlineMedium,
                   ),
                 ),
-                if (section == 1 && role.canEdit) ...[
-                  IconButton(
-                    onPressed: importCsv,
-                    icon: const Icon(Icons.upload_file_rounded),
-                    tooltip: 'Import CSV',
-                  ),
-                  FilledButton.icon(
-                    onPressed: () => openEditor(),
-                    icon: const Icon(Icons.add_rounded),
-                    label: const Text('Add'),
-                  ),
-                ],
                 if (section == 2 && role.canEdit)
                   IconButton(
                     onPressed: () => categoryDialog(),
@@ -443,7 +466,59 @@ class _AdminState extends ConsumerState<AdminScreen> {
               ],
             ),
             const SizedBox(height: 20),
+            if (section == 1 && role.canEdit) ...[
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  FilledButton.icon(
+                    onPressed: () => openEditor(),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Add question'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: importJson,
+                    icon: const Icon(Icons.upload_file),
+                    label: const Text('Import JSON'),
+                  ),
+                  TextButton(
+                    onPressed: importCsv,
+                    child: const Text('CSV / Excel'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
             if (section == 0) ...[
+              ArenaPanel(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Question bank',
+                      style: context.type.headlineSmall?.copyWith(
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Browse questions by subject and manage publication.',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      onPressed: () => select(1),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: arenaMint,
+                        foregroundColor: arenaInk,
+                      ),
+                      child: const Text('Open question bank'),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
               Wrap(
                 spacing: 16,
                 runSpacing: 16,
@@ -455,7 +530,7 @@ class _AdminState extends ConsumerState<AdminScreen> {
                     ('Open reports', d['reports']),
                   ])
                     SizedBox(
-                      width: 200,
+                      width: 145,
                       child: ArenaCard(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -491,7 +566,7 @@ class _AdminState extends ConsumerState<AdminScreen> {
                   ),
                 ),
             ],
-            if (section == 1 || section == 3) ...[
+            if (section == 1) ...[
               TextField(
                 decoration: InputDecoration(
                   labelText: section == 1
@@ -507,22 +582,21 @@ class _AdminState extends ConsumerState<AdminScreen> {
               const SizedBox(height: 16),
             ],
             if (section == 1) ...[
-              if ((d['questions'] as List).isEmpty)
+              if ((d['categories'] as List).isEmpty)
                 const EmptyState(
-                  title: 'Your question bank starts here',
-                  message: 'Create a question or import a CSV.',
+                  title: 'No matching questions',
+                  message: 'Search another term or add a question.',
                 ),
-              ...(d['questions'] as List).map(
-                (q) => ListTile(
-                  contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                  title: Text(q['question_text']),
-                  subtitle: Text(
-                    '${q['category_name']} · ${q['difficulty']} · ${q['time_limit_seconds']}s · ${q['status']}',
+              for (final group in d['categories'])
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.folder_outlined),
+                    title: Text(group['name']),
+                    subtitle: Text('${group['question_count']} questions'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => openBank(group['id'], group['name']),
                   ),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: () => openEditor(Map<String, dynamic>.from(q)),
                 ),
-              ),
             ],
             if (section == 2)
               ...(d['categories'] as List<QuizCategory>).map(
@@ -537,6 +611,19 @@ class _AdminState extends ConsumerState<AdminScreen> {
                 ),
               ),
             if (section == 3) ...[
+              ArenaCard(
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.people_alt_outlined),
+                  title: const Text('Learner directory'),
+                  subtitle: const Text(
+                    'Search profiles and export learner data',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => openBank(null, 'Learner directory'),
+                ),
+              ),
+              const SizedBox(height: 16),
               if (role == AdminRole.superAdmin) ...[
                 Text('Academy staff', style: context.type.titleLarge),
                 const SizedBox(height: 12),
@@ -551,38 +638,6 @@ class _AdminState extends ConsumerState<AdminScreen> {
                 ),
                 const Divider(height: 32),
               ],
-              Text('Students', style: context.type.titleLarge),
-              ...(d['users'] as List).map(
-                (u) => ListTile(
-                  leading: AvatarBadge(name: u['full_name']),
-                  title: Text(u['full_name']),
-                  subtitle: Text('${u['email']} · ${u['rating']} rating'),
-                  trailing: role == AdminRole.superAdmin
-                      ? TextButton(
-                          onPressed: () async {
-                            try {
-                              await repo.session.client!.rpc(
-                                'admin_set_user',
-                                params: {
-                                  'user_id': u['id'],
-                                  'is_banned': u['is_banned'] != true,
-                                },
-                              );
-                              if (mounted) setState(load);
-                            } catch (_) {
-                              if (context.mounted) {
-                                showMessage(
-                                  context,
-                                  'Couldn’t update this user.',
-                                );
-                              }
-                            }
-                          },
-                          child: Text(u['is_banned'] == true ? 'Unban' : 'Ban'),
-                        )
-                      : null,
-                ),
-              ),
             ],
             if (section == 4) ...[
               if ((d['reports'] as List).isEmpty)
@@ -811,7 +866,7 @@ class _AdminState extends ConsumerState<AdminScreen> {
       },
     );
     return Scaffold(
-      appBar: AppBar(title: const Text('Academy workspace')),
+      appBar: ArenaBar(title: const Text('Academy workspace')),
       body: LayoutBuilder(
         builder: (context, constraints) {
           if (constraints.maxWidth >= 1024) {
@@ -836,21 +891,31 @@ class _AdminState extends ConsumerState<AdminScreen> {
           }
           return Column(
             children: [
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: DropdownButtonFormField<int>(
+                  initialValue: section,
+                  key: ValueKey(section),
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Workspace section',
+                  ),
+                  items: [
                     for (var i = 0; i < labels.length; i++)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: ChoiceChip(
-                          label: Text(labels[i]),
-                          selected: section == i,
-                          onSelected: (_) => select(i),
+                      DropdownMenuItem(
+                        value: i,
+                        child: Row(
+                          children: [
+                            Icon(icons[i], size: 18),
+                            const SizedBox(width: 10),
+                            Text(labels[i]),
+                          ],
                         ),
                       ),
                   ],
+                  onChanged: (value) {
+                    if (value != null) select(value);
+                  },
                 ),
               ),
               Expanded(child: content),

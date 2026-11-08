@@ -34,7 +34,7 @@ class _DailyState extends ConsumerState<DailyScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Daily Challenge')),
+    appBar: ArenaBar(title: const Text('Daily Challenge')),
     body: PageBody(
       maxWidth: 600,
       child: FutureBuilder(
@@ -50,30 +50,47 @@ class _DailyState extends ConsumerState<DailyScreen> {
               ),
             );
           }
-          if (!snapshot.hasData) return const SkeletonList();
+          if (!snapshot.hasData) {
+            return const SkeletonList(layout: SkeletonLayout.quiz);
+          }
           final d = snapshot.data!;
           return ListView(
             padding: const EdgeInsets.all(24),
             children: [
-              const SizedBox(height: 32),
-              Icon(
-                Icons.calendar_today_outlined,
-                size: 32,
-                color: context.tokens.secondary,
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: ArenaTokens.navy,
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.today_rounded,
+                      color: ArenaTokens.gold,
+                      size: 40,
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      d['title'],
+                      style: context.type.headlineSmall?.copyWith(
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Everyone gets the same questions. Each answer takes you straight to the next one.',
+                      style: TextStyle(
+                        color: Color(0xFFD7E2FF),
+                        fontSize: 14,
+                        height: 1.6,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 32),
-              Text(
-                d['title'],
-                style: context.type.headlineLarge,
-                textAlign: TextAlign.start,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'The same questions for every learner, with one attempt each day',
-                style: TextStyle(color: context.tokens.muted, fontSize: 16),
-                textAlign: TextAlign.start,
-              ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
               ArenaCard(
                 child: Column(
                   children: [

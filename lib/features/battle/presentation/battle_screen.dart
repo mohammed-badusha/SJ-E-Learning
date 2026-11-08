@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'duel_intro.dart';
+import '../../../shared/arena_motion.dart';
+import '../../../shared/player_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -28,8 +31,10 @@ class _BattleState extends ConsumerState<BattleScreen>
   Timer? polling, ticker;
   RealtimeChannel? channel;
   bool busy = false, submitting = false, active = true;
+  bool refreshPending = false;
   String? selected, error;
   int previousIndex = -1;
+  final roundsScroll = ScrollController();
   double remaining = 0;
   Duration offset = Duration.zero;
   @override
@@ -55,18 +60,21 @@ class _BattleState extends ConsumerState<BattleScreen>
     polling = Timer.periodic(const Duration(seconds: 2), (_) {
       if (active) refresh();
     });
-    ticker = Timer.periodic(const Duration(milliseconds: 100), (_) {
-      if (mounted && data?['question'] != null) {
+    ticker = Timer.periodic(const Duration(milliseconds: 150), (_) {
+      if (active &&
+          mounted &&
+          data?['phase'] == 'question' &&
+          data?['question'] != null) {
         final deadline = data!['question']['deadline_at'];
         if (deadline != null) {
-          setState(
-            () => remaining =
-                (DateTime.parse(deadline)
-                            .difference(DateTime.now().add(offset))
-                            .inMilliseconds /
-                        1000)
-                    .clamp(0, 120),
-          );
+          final next =
+              (DateTime.parse(
+                        deadline,
+                      ).difference(DateTime.now().add(offset)).inMilliseconds /
+                      1000)
+                  .clamp(0, 120)
+                  .ceilToDouble();
+          if (next != remaining) setState(() => remaining = next);
           final seconds = remaining.ceil();
           if (seconds > 0 &&
               seconds <= 3 &&
@@ -89,7 +97,11 @@ class _BattleState extends ConsumerState<BattleScreen>
   }
 
   Future<void> refresh() async {
-    if (busy) return;
+    if (!mounted) return;
+    if (busy) {
+      refreshPending = true;
+      return;
+    }
     busy = true;
     final sent = DateTime.now();
     try {
@@ -160,6 +172,7 @@ class _BattleState extends ConsumerState<BattleScreen>
         }
       }
       if (next['question_index'] != previousIndex) {
+        if (roundsScroll.hasClients) roundsScroll.jumpTo(0);
         selected = null;
         submitting = false;
         previousIndex = next['question_index'];
@@ -173,6 +186,16 @@ class _BattleState extends ConsumerState<BattleScreen>
       }
       setState(() {
         data = next;
+        final deadline = next['question']?['deadline_at'];
+        if (deadline != null) {
+          remaining =
+              (DateTime.parse(
+                        deadline,
+                      ).difference(DateTime.now().add(offset)).inMilliseconds /
+                      1000)
+                  .clamp(0, 120)
+                  .ceilToDouble();
+        }
         error = null;
       });
     } catch (_) {
@@ -184,6 +207,14 @@ class _BattleState extends ConsumerState<BattleScreen>
       }
     } finally {
       busy = false;
+      if (refreshPending) {
+        refreshPending = false;
+        if (mounted &&
+            active &&
+            !['completed', 'abandoned'].contains(data?['status'])) {
+          unawaited(refresh());
+        }
+      }
     }
   }
 
@@ -254,6 +285,7 @@ class _BattleState extends ConsumerState<BattleScreen>
 
   @override
   void dispose() {
+    roundsScroll.dispose();
     WidgetsBinding.instance.removeObserver(this);
     audio.leaveGame(this);
     polling?.cancel();
@@ -265,8 +297,28 @@ class _BattleState extends ConsumerState<BattleScreen>
   @override
   Widget build(BuildContext context) {
     if (data == null) {
+      if (error == null) {
+        final profile = repo.session.profile!;
+        return PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (popped, _) {
+            if (!popped) leave();
+          },
+          child: DuelIntro(
+            name: profile.fullName,
+            rival: '',
+            ownPortrait: profile.avatarUrl,
+            rivalPortrait: null,
+            matchId: widget.matchId,
+            ownRank: profile.tier,
+            rivalRank: '',
+            bot: false,
+            onLeave: leave,
+          ),
+        );
+      }
       return Scaffold(
-        appBar: AppBar(title: const Text('Your battle')),
+        appBar: ArenaBar(title: const Text('Your battle')),
         body: error == null
             ? const SkeletonList()
             : EmptyState(
@@ -298,153 +350,294 @@ class _BattleState extends ConsumerState<BattleScreen>
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop) leave();
       },
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Live battle'),
-          actions: const [GameAudioButton()],
-          leading: IconButton(
-            onPressed: leave,
-            icon: const Icon(Icons.close_rounded),
-            tooltip: 'Leave match',
-          ),
-        ),
-        body: PageBody(
-          maxWidth: 700,
-          child: ListView(
-            padding: const EdgeInsets.all(24),
-            children: [
-              if (error != null)
-                MaterialBanner(
-                  content: Text(error!),
-                  actions: [
-                    TextButton(onPressed: refresh, child: const Text('Retry')),
-                  ],
+      child: question == null && error == null
+          ? DuelIntro(
+              matchId: widget.matchId,
+              name: me['full_name'],
+              rival: opponent['full_name'],
+              ownRank: RankTier.forRating(me['rating']).label,
+              rivalRank: RankTier.forRating(opponent['rating']).label,
+              ownPortrait: repo.session.profile!.avatarUrl,
+              rivalPortrait:
+                  opponent['avatar_url'] ??
+                  (data!['mode'] == 'bot' ? 'preset:explorer' : null),
+              bot: data!['mode'] == 'bot' && data!['label_bots'] == true,
+              onLeave: leave,
+            )
+          : Scaffold(
+              appBar: ArenaBar(
+                title: const Text('Live battle'),
+                actions: const [GameAudioButton()],
+                leading: IconButton(
+                  onPressed: leave,
+                  icon: const Icon(Icons.close_rounded),
+                  tooltip: 'Leave match',
                 ),
-              Row(
-                children: [
-                  AvatarBadge(name: me['full_name']),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'You\n${me['score']} pts',
-                      style: context.type.titleMedium,
-                    ),
-                  ),
-                  Text(
-                    'VS',
-                    style: TextStyle(
-                      color: context.tokens.muted,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(width: 20),
-                  Expanded(
-                    child: Text(
-                      '${opponent['full_name']}\n${opponent['score']} pts',
-                      textAlign: TextAlign.end,
-                      style: context.type.titleMedium,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  AvatarBadge(
-                    name: opponent['full_name'],
-                    color: context.tokens.warning,
-                  ),
-                ],
               ),
-              if (opponent['connected'] == false) ...[
-                const SizedBox(height: 12),
-                const Text('Opponent reconnecting…'),
-              ],
-              if (data!['mode'] == 'bot' && data!['label_bots'] == true)
-                const Center(child: Chip(label: Text('Practice opponent'))),
-              const SizedBox(height: 32),
-              if (question == null) ...[
-                const SizedBox(height: 40),
-                Text(
-                  'Match found\nGet ready',
-                  textAlign: TextAlign.center,
-                  style: context.type.headlineLarge,
-                ),
-                const SizedBox(height: 24),
-                const Center(
-                  child: Icon(
-                    Icons.bolt_rounded,
-                    size: 88,
-                    color: ArenaTokens.violet,
-                  ),
-                ),
-              ] else ...[
-                Row(
+              body: PageBody(
+                maxWidth: 700,
+                child: ListView(
+                  controller: roundsScroll,
+                  padding: const EdgeInsets.all(16),
                   children: [
-                    Expanded(
-                      child: Text(
-                        'Question ${(data!['question_index'] as int) + 1} of ${data!['question_count']}',
-                        style: context.type.titleMedium,
+                    if (error != null)
+                      MaterialBanner(
+                        content: Text(error!),
+                        actions: [
+                          TextButton(
+                            onPressed: refresh,
+                            child: const Text('Retry'),
+                          ),
+                        ],
                       ),
+                    _FaceOff(
+                      me: me,
+                      opponent: opponent,
+                      matchId: widget.matchId,
+                      ownPortrait: repo.session.profile!.avatarUrl,
+                      countdown: question == null,
+                      bot: data!['mode'] == 'bot',
                     ),
-                    TimerRing(
-                      remaining: remaining,
-                      total: (question['time_limit_seconds'] as num).toDouble(),
-                    ),
+                    if (opponent['connected'] == false) ...[
+                      const SizedBox(height: 12),
+                      const Text('Opponent reconnecting…'),
+                    ],
+                    if (data!['mode'] == 'bot' && data!['label_bots'] == true)
+                      const Center(
+                        child: Chip(label: Text('Practice opponent')),
+                      ),
+                    const SizedBox(height: 16),
+                    if (question == null) ...[
+                      Text(
+                        'Match found',
+                        textAlign: TextAlign.center,
+                        style: context.type.headlineMedium,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Get ready for the first question.',
+                        textAlign: TextAlign.center,
+                        style: context.type.bodyLarge,
+                      ),
+                    ] else ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Question ${(data!['question_index'] as int) + 1} of ${data!['question_count']}',
+                              style: context.type.titleMedium,
+                            ),
+                          ),
+                          TimerRing(
+                            remaining: remaining,
+                            total: (question['time_limit_seconds'] as num)
+                                .toDouble(),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: LinearProgressIndicator(
+                          value:
+                              ((data!['question_index'] as num) + 1) /
+                              (data!['question_count'] as num),
+                          minHeight: 5,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      if (data!['question_index'] ==
+                          (data!['question_count'] as int) - 1) ...[
+                        Text(
+                          'Final round · Double points',
+                          style: TextStyle(
+                            color: context.tokens.warning,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+                      ArenaCard(
+                        child: Text(
+                          question['question_text'],
+                          style: context.type.titleLarge?.copyWith(height: 1.4),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      if (result == null)
+                        Semantics(
+                          liveRegion: true,
+                          child: Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Text(
+                              submitting
+                                  ? 'Sending your answer…'
+                                  : selected != null ||
+                                        (data!['answered'] as List).contains(
+                                          uid,
+                                        )
+                                  ? 'Answer locked · Waiting for the reveal'
+                                  : (data!['answered'] as List).contains(
+                                      opponent['id'],
+                                    )
+                                  ? 'Opponent has answered'
+                                  : 'Choose an answer',
+                              style: context.type.titleSmall,
+                            ),
+                          ),
+                        ),
+                      ...(question['options'] as List).asMap().entries.map((
+                        entry,
+                      ) {
+                        final opt = entry.value as Map;
+                        final id = opt['id'] as String;
+                        final answered = (data!['answered'] as List).contains(
+                          uid,
+                        );
+                        final state = result != null
+                            ? (id == result['correct_option_id']
+                                  ? OptionState.correct
+                                  : id == selected
+                                  ? OptionState.wrong
+                                  : OptionState.disabled)
+                            : id == selected
+                            ? OptionState.selected
+                            : answered || selected != null || remaining <= 0
+                            ? OptionState.disabled
+                            : OptionState.idle;
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: OptionTile(
+                            label: String.fromCharCode(65 + entry.key),
+                            text: opt['option_text'],
+                            state: state,
+                            onTap: () => answer(id),
+                          ),
+                        );
+                      }),
+                      if (result != null) ...[
+                        const SizedBox(height: 16),
+                        Arrive(
+                          key: ValueKey(previousIndex),
+                          child: ArenaCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  selected == null
+                                      ? 'Time’s up'
+                                      : selected == result['correct_option_id']
+                                      ? 'Correct answer'
+                                      : 'Incorrect answer',
+                                  style: context.type.titleMedium,
+                                ),
+                                if ((result['explanation'] ?? '').isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: Text(result['explanation']),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ],
                 ),
-                const SizedBox(height: 24),
-                if (data!['question_index'] ==
-                    (data!['question_count'] as int) - 1) ...[
-                  Text(
-                    'Final round · Double points',
-                    style: TextStyle(
-                      color: context.tokens.warning,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                ],
+              ),
+            ),
+    );
+  }
+}
+
+class _FaceOff extends StatelessWidget {
+  const _FaceOff({
+    required this.me,
+    required this.opponent,
+    required this.matchId,
+    required this.ownPortrait,
+    required this.countdown,
+    required this.bot,
+  });
+  final Map<String, dynamic> me, opponent;
+  final String matchId;
+  final String? ownPortrait;
+  final bool countdown, bot;
+  @override
+  Widget build(BuildContext context) {
+    Widget player(Map<String, dynamic> data, bool mine) {
+      final name = data['full_name'] as String;
+      return Expanded(
+        child: Arrive(
+          from: Offset(mine ? -32 : 32, 0),
+          duration: 360,
+          child: Column(
+            children: [
+              PlayerAvatar(
+                name: name,
+                reference: mine
+                    ? ownPortrait
+                    : (data['avatar_url'] as String? ??
+                          (bot ? 'preset:explorer' : null)),
+                matchId: mine ? null : matchId,
+                size: countdown ? 72 : 42,
+              ),
+              const SizedBox(height: 7),
+              Text(
+                mine ? 'You · $name' : name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: context.type.titleSmall?.copyWith(color: Colors.white),
+              ),
+              if (countdown)
                 Text(
-                  question['question_text'],
-                  style: context.type.titleLarge?.copyWith(height: 1.5),
-                ),
-                const SizedBox(height: 28),
-                ...(question['options'] as List).asMap().entries.map((entry) {
-                  final opt = entry.value as Map;
-                  final id = opt['id'] as String;
-                  final answered = (data!['answered'] as List).contains(uid);
-                  final state = result != null
-                      ? (id == result['correct_option_id']
-                            ? OptionState.correct
-                            : id == selected
-                            ? OptionState.wrong
-                            : OptionState.disabled)
-                      : id == selected
-                      ? OptionState.selected
-                      : answered || selected != null || remaining <= 0
-                      ? OptionState.disabled
-                      : OptionState.idle;
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: OptionTile(
-                      label: String.fromCharCode(65 + entry.key),
-                      text: opt['option_text'],
-                      state: state,
-                      onTap: () => answer(id),
-                    ),
-                  );
-                }),
-                if ((data!['answered'] as List).contains(opponent['id']))
-                  const Center(
-                    child: Chip(
-                      avatar: Icon(Icons.check_rounded, size: 18),
-                      label: Text('Opponent answered'),
-                    ),
+                  RankTier.forRating(data['rating'] as int).label,
+                  style: const TextStyle(color: Color(0xffdddaf8)),
+                )
+              else
+                CountMetric(
+                  data['score'] as int,
+                  format: (n) => '$n pts',
+                  style: context.type.titleMedium?.copyWith(
+                    color: ArenaTokens.gold,
                   ),
-                if (result != null) ...[
-                  const SizedBox(height: 16),
-                  ArenaCard(child: Text(result['explanation'] ?? '')),
-                ],
-              ],
+                ),
             ],
           ),
+        ),
+      );
+    }
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [ArenaTokens.navy, Color(0xff443887)],
+        ),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+        child: Row(
+          children: [
+            player(me, true),
+            Container(
+              padding: const EdgeInsets.all(9),
+              decoration: const BoxDecoration(
+                color: ArenaTokens.gold,
+                shape: BoxShape.circle,
+              ),
+              child: const Text(
+                'VS',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: ArenaTokens.navy,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+            player(opponent, false),
+          ],
         ),
       ),
     );

@@ -146,7 +146,7 @@ class EditProfileRoute extends GoRouteData with _$EditProfileRoute {
   const EditProfileRoute();
   @override
   Widget build(BuildContext context, GoRouterState state) =>
-      const CompleteProfileScreen();
+      const CompleteProfileScreen(editing: true);
 }
 
 @TypedGoRoute<AdminRoute>(path: '/admin')
@@ -243,15 +243,24 @@ class _AppShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final destinations = [
-      ('/', Icons.home_outlined, 'Home'),
-      ('/leaderboard', Icons.leaderboard_outlined, 'Ranks'),
-      ('/history', Icons.history_rounded, 'History'),
-      ('/profile', Icons.person_outline_rounded, 'Profile'),
+      ('/', Icons.home_outlined, 'Home', Icons.home_rounded),
+      (
+        '/leaderboard',
+        Icons.emoji_events_outlined,
+        'Leaderboard',
+        Icons.emoji_events_rounded,
+      ),
+      ('/profile', Icons.insights_outlined, 'Progress', Icons.insights_rounded),
       if (session.role.isAdmin)
-        ('/admin', Icons.admin_panel_settings_outlined, 'Admin'),
+        (
+          '/admin',
+          Icons.admin_panel_settings_outlined,
+          'Admin',
+          Icons.admin_panel_settings_rounded,
+        ),
     ];
     final index = destinations
-        .indexWhere((d) => d.$1 == path)
+        .indexWhere((d) => d.$1 == (path == '/history' ? '/profile' : path))
         .clamp(0, destinations.length - 1);
     final content = Column(
       children: [
@@ -298,6 +307,7 @@ class _AppShell extends StatelessWidget {
                       for (final d in destinations)
                         NavigationRailDestination(
                           icon: Icon(d.$2),
+                          selectedIcon: Icon(d.$4),
                           label: Text(d.$3),
                         ),
                     ],
@@ -309,13 +319,33 @@ class _AppShell extends StatelessWidget {
             : content,
         bottomNavigationBar: constraints.maxWidth >= 1000
             ? null
-            : NavigationBar(
-                selectedIndex: index,
-                onDestinationSelected: (i) => context.go(destinations[i].$1),
-                destinations: [
-                  for (final d in destinations)
-                    NavigationDestination(icon: Icon(d.$2), label: d.$3),
-                ],
+            : DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border(
+                    top: BorderSide(
+                      color: Theme.of(context).dividerTheme.color!,
+                    ),
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 1),
+                  child: NavigationBar(
+                    animationDuration: MediaQuery.disableAnimationsOf(context)
+                        ? Duration.zero
+                        : const Duration(milliseconds: 200),
+                    selectedIndex: index,
+                    onDestinationSelected: (i) =>
+                        context.go(destinations[i].$1),
+                    destinations: [
+                      for (final d in destinations)
+                        NavigationDestination(
+                          icon: Icon(d.$2),
+                          selectedIcon: Icon(d.$4),
+                          label: d.$3,
+                        ),
+                    ],
+                  ),
+                ),
               ),
       ),
     );

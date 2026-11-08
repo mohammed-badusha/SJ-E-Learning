@@ -1,3 +1,5 @@
+import 'trophy.dart';
+import 'arena_motion.dart';
 import 'package:flutter/material.dart';
 import '../core/theme.dart';
 import '../features/profile/domain/rank_tier.dart';
@@ -40,7 +42,16 @@ class TierBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(size * .28),
         border: Border.all(color: tier.color.withValues(alpha: .22)),
       ),
-      child: Icon(tier.icon, size: size * .56, color: tier.color),
+      child: tier.index <= RankTier.gold.index
+          ? Trophy(
+              size: size * .72,
+              metal: switch (tier) {
+                RankTier.bronze => const Color(0xffdd986b),
+                RankTier.silver => const Color(0xffacbdcc),
+                _ => const Color(0xffffbf49),
+              },
+            )
+          : Icon(tier.icon, size: size * .56, color: tier.color),
     );
     return Semantics(
       label: '${tier.label} rank tier',
@@ -90,7 +101,7 @@ class TierProgress extends StatelessWidget {
                 ],
               ),
             ),
-            Text('$rating', style: context.type.headlineSmall),
+            CountMetric(rating, style: context.type.headlineSmall),
           ],
         ),
         const SizedBox(height: 16),

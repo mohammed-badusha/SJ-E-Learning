@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 import '../../../core/env.dart';
 import '../../../core/theme.dart';
 import '../../../shared/widgets.dart';
+import '../../../shared/arena_motion.dart';
+import 'portrait_picker.dart';
 import '../data/session.dart';
 import '../domain/models.dart';
 import 'sign_in_error.dart';
@@ -45,72 +47,160 @@ class _LoginState extends ConsumerState<LoginScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    body: PageBody(
-      maxWidth: 520,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(28),
+  Widget build(BuildContext context) => AnnotatedRegion<SystemUiOverlayStyle>(
+    value: SystemUiOverlayStyle.light,
+    child: Scaffold(
+      backgroundColor: context.tokens.card,
+      body: SingleChildScrollView(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: 28),
-            const Row(
-              children: [
-                SJMark(size: 44),
-                SizedBox(width: 12),
-                Text(
-                  'SJ E-Learning',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w500),
-                ),
-              ],
-            ),
-            const SizedBox(height: 32),
-            const _ArenaIllustration(),
-            const SizedBox(height: 32),
-            Text(
-              'Prepare for your\nnext exam',
-              style: context.type.headlineLarge,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Practise by subject, play timed quiz battles and build a daily challenge streak',
-              style: context.type.bodyLarge?.copyWith(
-                color: context.tokens.muted,
-              ),
-            ),
-            const SizedBox(height: 32),
-            PrimaryButton(
-              label: 'Continue with Google',
-              icon: Icons.login_rounded,
-              busy: busy,
-              onPressed: signIn,
-            ),
-            if (error != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 16),
-                child: Text(
-                  error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-              ),
-            const SizedBox(height: 12),
-            SizedBox(
+            Container(
               width: double.infinity,
-              child: TextButton(
-                onPressed: () {
-                  ref.read(sessionProvider).enterPreview();
-                  context.go('/');
-                },
-                child: const Text('Explore the local preview'),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xff3329a5),
+                    Color(0xff5d49d6),
+                    Color(0xff8777e4),
+                  ],
+                ),
+              ),
+              child: SafeArea(
+                bottom: false,
+                child: Column(
+                  children: [
+                    SizedBox(
+                      height: (MediaQuery.sizeOf(context).height * .075).clamp(
+                        20,
+                        76,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const SJMark(size: 44),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'SJ E-Learning',
+                      style: context.type.headlineMedium?.copyWith(
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Competitive exam practice',
+                      style: TextStyle(color: Colors.white, fontSize: 14),
+                    ),
+                    SizedBox(
+                      height: (MediaQuery.sizeOf(context).height * .07).clamp(
+                        20,
+                        64,
+                      ),
+                    ),
+                    Container(
+                      height: 16,
+                      margin: const EdgeInsets.symmetric(horizontal: 28),
+                      decoration: const BoxDecoration(
+                        color: Color(0x44ffffff),
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(28),
+                        ),
+                      ),
+                    ),
+                    Container(
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: context.tokens.card,
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(32),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-            const SizedBox(height: 24),
-            Text(
-              'Google sign-in only. Your phone number is requested after sign-in for academy communication.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: context.tokens.muted),
+            SafeArea(
+              top: false,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 440),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(28, 12, 28, 36),
+                    child: Arrive(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Welcome to the arena',
+                            style: context.type.headlineMedium,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Practise a subject, challenge a rival, or see how far you’ve come.',
+                            style: context.type.bodyLarge?.copyWith(
+                              color: context.tokens.secondary,
+                            ),
+                          ),
+                          const SizedBox(height: 28),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                backgroundColor: Colors.white,
+                                foregroundColor: const Color(0xff1f1f1f),
+                                side: const BorderSide(
+                                  color: Color(0xff747775),
+                                ),
+                                shape: const StadiumBorder(),
+                              ),
+                              onPressed: busy ? null : signIn,
+                              icon: Image.asset(
+                                'assets/brand/google-g.png',
+                                width: 20,
+                                height: 20,
+                                excludeFromSemantics: true,
+                              ),
+                              label: Text(
+                                busy ? 'Signing in…' : 'Continue with Google',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 15,
+                                ),
+                              ),
+                            ),
+                          ),
+                          if (error != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 12),
+                              child: Semantics(
+                                liveRegion: true,
+                                child: Text(
+                                  error!,
+                                  style: TextStyle(
+                                    color: Theme.of(context).colorScheme.error,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          const SizedBox(height: 18),
+                          Text(
+                            'New here? Your first sign-in creates your player profile.',
+                            style: context.type.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ),
-            const SizedBox(height: 24),
           ],
         ),
       ),
@@ -118,69 +208,16 @@ class _LoginState extends ConsumerState<LoginScreen> {
   );
 }
 
-class _ArenaIllustration extends StatelessWidget {
-  const _ArenaIllustration();
-  @override
-  Widget build(BuildContext context) => ArenaCard(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Multiple-choice practice',
-                style: context.type.bodySmall,
-              ),
-            ),
-            Text('A–D', style: context.type.bodySmall),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Text('What is 25% of 200?', style: context.type.titleLarge),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            for (final entry in [
-              ('A', '25'),
-              ('B', '50'),
-              ('C', '75'),
-              ('D', '100'),
-            ])
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    decoration: BoxDecoration(
-                      color: context.tokens.raised,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Column(
-                      children: [
-                        Text(entry.$1, style: context.type.bodySmall),
-                        const SizedBox(height: 4),
-                        Text(entry.$2, style: context.type.titleMedium),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ],
-    ),
-  );
-}
-
 class CompleteProfileScreen extends ConsumerStatefulWidget {
-  const CompleteProfileScreen({super.key});
+  const CompleteProfileScreen({super.key, this.editing = false});
+  final bool editing;
   @override
   ConsumerState<CompleteProfileScreen> createState() => _CompleteProfileState();
 }
 
 class _CompleteProfileState extends ConsumerState<CompleteProfileScreen> {
   final name = TextEditingController();
+  PortraitChoice? portrait;
   final phone = TextEditingController();
   bool busy = false;
   String? error;
@@ -193,6 +230,7 @@ class _CompleteProfileState extends ConsumerState<CompleteProfileScreen> {
         session.client?.auth.currentUser?.userMetadata?['full_name']
             as String? ??
         '';
+    phone.text = normalizePhone(session.profile?.phone ?? '');
     name.addListener(update);
     phone.addListener(update);
   }
@@ -211,8 +249,21 @@ class _CompleteProfileState extends ConsumerState<CompleteProfileScreen> {
       error = null;
     });
     try {
-      await ref.read(sessionProvider).completeProfile(name.text, phone.text);
-      if (mounted) context.go('/');
+      await ref
+          .read(sessionProvider)
+          .completeProfile(
+            name.text,
+            phone.text,
+            portrait: portrait?.reference,
+            photo: portrait?.photo,
+          );
+      if (mounted) {
+        if (widget.editing && context.canPop()) {
+          context.pop();
+        } else {
+          context.go('/');
+        }
+      }
     } catch (e) {
       if (mounted) {
         setState(
@@ -230,8 +281,11 @@ class _CompleteProfileState extends ConsumerState<CompleteProfileScreen> {
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider);
     return PopScope(
-      canPop: false,
+      canPop: widget.editing && !busy,
       child: Scaffold(
+        appBar: widget.editing
+            ? ArenaBar(title: const Text('Edit profile'))
+            : null,
         body: PageBody(
           maxWidth: 520,
           child: SingleChildScrollView(
@@ -243,15 +297,29 @@ class _CompleteProfileState extends ConsumerState<CompleteProfileScreen> {
                 const SJMark(size: 56),
                 const SizedBox(height: 36),
                 Text(
-                  'Complete your profile',
+                  widget.editing
+                      ? 'Your player profile'
+                      : 'Complete your profile',
                   style: context.type.headlineLarge,
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Add your name and mobile number to continue',
+                  widget.editing
+                      ? 'Update your picture, name or mobile number.'
+                      : 'Choose how you’ll appear in the arena.',
                   style: TextStyle(color: context.tokens.muted, fontSize: 16),
                 ),
                 const SizedBox(height: 32),
+                IgnorePointer(
+                  ignoring: busy,
+                  child: PortraitPicker(
+                    name: name.text,
+                    original: session.profile?.avatarUrl,
+                    choice: portrait,
+                    onChanged: (p) => setState(() => portrait = p),
+                  ),
+                ),
+                const SizedBox(height: 20),
                 TextField(
                   controller: name,
                   textCapitalization: TextCapitalization.words,
@@ -304,7 +372,7 @@ class _CompleteProfileState extends ConsumerState<CompleteProfileScreen> {
                 ],
                 const SizedBox(height: 28),
                 PrimaryButton(
-                  label: 'Save & continue',
+                  label: widget.editing ? 'Save changes' : 'Save & continue',
                   busy: busy,
                   onPressed:
                       validateName(name.text) == null &&
@@ -314,12 +382,13 @@ class _CompleteProfileState extends ConsumerState<CompleteProfileScreen> {
                       : null,
                 ),
                 const SizedBox(height: 12),
-                Center(
-                  child: TextButton(
-                    onPressed: busy ? null : session.signOut,
-                    child: const Text('Sign out'),
+                if (!widget.editing)
+                  Center(
+                    child: TextButton(
+                      onPressed: busy ? null : session.signOut,
+                      child: const Text('Sign out'),
+                    ),
                   ),
-                ),
               ],
             ),
           ),

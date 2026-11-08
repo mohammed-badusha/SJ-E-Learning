@@ -35,8 +35,15 @@ class ArenaCard extends StatelessWidget {
     padding: padding,
     decoration: BoxDecoration(
       color: color ?? context.tokens.card,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(20),
       border: Border.all(color: context.tokens.line),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: .025),
+          blurRadius: 14,
+          offset: const Offset(0, 4),
+        ),
+      ],
     ),
     child: child,
   );
@@ -107,16 +114,19 @@ class OptionTile extends StatelessWidget {
       label: 'Option $label, $text, ${state.name}',
       child: Material(
         color: selected ? color.withValues(alpha: .1) : context.tokens.card,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: state == OptionState.idle ? onTap : null,
-          child: Container(
+          child: AnimatedContainer(
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : ArenaTokens.fast,
             constraints: const BoxConstraints(minHeight: 64),
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               border: Border.all(color: color, width: selected ? 1.5 : 1),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(16),
             ),
             child: Row(
               children: [
@@ -128,7 +138,7 @@ class OptionTile extends StatelessWidget {
                     color: selected
                         ? color.withValues(alpha: .08)
                         : context.tokens.raised,
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: BorderRadius.circular(9),
                   ),
                   child: Text(
                     label,
@@ -215,7 +225,7 @@ class AvatarBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) => CircleAvatar(
     radius: size / 2,
-    backgroundColor: context.tokens.raised,
+    backgroundColor: color.withValues(alpha: .10),
     child: Text(
       name.isEmpty
           ? 'SJ'
@@ -226,7 +236,9 @@ class AvatarBadge extends StatelessWidget {
                 .join()
                 .toUpperCase(),
       style: TextStyle(
-        color: context.tokens.secondary,
+        color: Theme.of(context).brightness == Brightness.dark
+            ? context.tokens.ink
+            : color,
         fontSize: size * .3,
         fontWeight: FontWeight.w500,
       ),
@@ -272,28 +284,117 @@ class EmptyState extends StatelessWidget {
   );
 }
 
+enum SkeletonLayout { list, quiz, standings, profile, report }
+
 class SkeletonList extends StatelessWidget {
-  const SkeletonList({super.key});
+  const SkeletonList({super.key, this.layout = SkeletonLayout.list});
+  final SkeletonLayout layout;
   @override
-  Widget build(BuildContext context) => ListView.separated(
-    padding: const EdgeInsets.all(24),
-    itemCount: 5,
-    separatorBuilder: (_, index) => const SizedBox(height: 16),
-    itemBuilder: (_, index) => ArenaCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(height: 16, width: 140, color: context.tokens.line),
-          const SizedBox(height: 12),
-          Container(
-            height: 12,
-            width: double.infinity,
-            color: context.tokens.line,
+  Widget build(BuildContext context) => ListView(
+    padding: const EdgeInsets.all(20),
+    children: [ArenaSkeleton(layout: layout)],
+  );
+}
+
+class ArenaSkeleton extends StatelessWidget {
+  const ArenaSkeleton({
+    super.key,
+    this.layout = SkeletonLayout.list,
+    this.label = 'Loading…',
+  });
+  final SkeletonLayout layout;
+  final String label;
+  @override
+  Widget build(BuildContext context) {
+    final tone = context.tokens.line;
+    Widget block(double height, {double? width}) => Container(
+      height: height,
+      width: width,
+      decoration: BoxDecoration(
+        color: tone,
+        borderRadius: BorderRadius.circular(9),
+      ),
+    );
+    Widget row() => Row(
+      children: [
+        block(36, width: 36),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              FractionallySizedBox(widthFactor: .72, child: block(12)),
+              const SizedBox(height: 7),
+              FractionallySizedBox(widthFactor: .42, child: block(8)),
+            ],
           ),
+        ),
+        const SizedBox(width: 12),
+        block(14, width: 28),
+      ],
+    );
+    return Semantics(
+      label: label,
+      container: true,
+      excludeSemantics: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ArenaCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (layout == SkeletonLayout.quiz) ...[
+                  block(11, width: 100),
+                  const SizedBox(height: 18),
+                  block(18),
+                  const SizedBox(height: 8),
+                  block(15, width: 150),
+                ] else
+                  row(),
+              ],
+            ),
+          ),
+          if (layout == SkeletonLayout.standings) ...[
+            const SizedBox(height: 12),
+            ArenaCard(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  for (final h in [52.0, 78.0, 42.0])
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: block(h),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+          if (layout == SkeletonLayout.profile ||
+              layout == SkeletonLayout.report) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                for (var i = 0; i < 3; i++)
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: block(48),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+          for (var i = 0; i < (layout == SkeletonLayout.quiz ? 4 : 3); i++) ...[
+            const SizedBox(height: 10),
+            ArenaCard(padding: const EdgeInsets.all(14), child: row()),
+          ],
         ],
       ),
-    ),
-  );
+    );
+  }
 }
 
 void showMessage(BuildContext context, String message) =>
@@ -317,4 +418,44 @@ class PageBody extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// Shared arena masthead. The title and actions keep native toolbar behaviour.
+class ArenaBar extends AppBar {
+  ArenaBar({
+    super.key,
+    super.title,
+    super.actions,
+    super.leading,
+    super.automaticallyImplyLeading,
+  }) : super(
+         flexibleSpace: const DecoratedBox(
+           decoration: BoxDecoration(
+             gradient: LinearGradient(
+               colors: [ArenaTokens.navy, Color(0xff443887)],
+             ),
+           ),
+           child: CustomPaint(painter: _TrackLines()),
+         ),
+       );
+}
+
+class _TrackLines extends CustomPainter {
+  const _TrackLines();
+  @override
+  void paint(Canvas c, Size s) {
+    final pen = Paint()
+      ..color = const Color(0x16ffffff)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.4;
+    c.save();
+    c.clipRect(Offset.zero & s);
+    for (var i = 0; i < 3; i++) {
+      c.drawCircle(Offset(s.width - 20, -35), 65 + i * 14, pen);
+    }
+    c.restore();
+  }
+
+  @override
+  bool shouldRepaint(_TrackLines old) => false;
 }

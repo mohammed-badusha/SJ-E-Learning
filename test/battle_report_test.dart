@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:ui' show ImageByteFormat;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart';
+import 'support/load_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:quiz_arena/core/theme.dart';
@@ -14,16 +14,7 @@ import 'package:quiz_arena/features/results/presentation/battle_result_screen.da
 import 'support/battle_fixture.dart';
 
 void main() {
-  setUpAll(() async {
-    await (FontLoader(
-      'MaterialIcons',
-    )..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'))).load();
-    for (final font in ['Inter', 'PlusJakartaSans']) {
-      await (FontLoader(
-        font,
-      )..addFont(rootBundle.load('assets/fonts/$font.ttf'))).load();
-    }
-  });
+  setUpAll(loadAppFonts);
   test('Rank boundaries agree with the actual rating thresholds', () {
     expect(RankTier.forRating(1099), RankTier.bronze);
     expect(RankTier.forRating(1100), RankTier.silver);
@@ -87,6 +78,15 @@ void main() {
           ),
         ),
       );
+      await tester.pumpWidget(app(const SizedBox()));
+      await tester.runAsync(() async {
+        for (final id in ['curie', 'explorer']) {
+          await precacheImage(
+            AssetImage('assets/avatars/$id.webp'),
+            key.currentContext!,
+          );
+        }
+      });
       await tester.pumpWidget(
         app(
           BattleResultScreen(
@@ -99,7 +99,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('You won'), findsOneWidget);
-      expect(find.text('Silver tier'), findsOneWidget);
+      expect(find.text('VS'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.runAsync(() async {
         final image =
@@ -117,11 +117,16 @@ void main() {
         300,
       );
       expect(tester.takeException(), isNull);
-      await tester.scrollUntilVisible(find.text('Review every answer'), 300);
+      await tester.scrollUntilVisible(
+        find.text('3 of 3 questions played · 34.2s match time'),
+        300,
+      );
       expect(
         find.text('3 of 3 questions played · 34.2s match time'),
         findsOneWidget,
       );
+      await tester.scrollUntilVisible(find.text('Silver tier'), 300);
+      await tester.scrollUntilVisible(find.text('Play again'), 300);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(
         app(

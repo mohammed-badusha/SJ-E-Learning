@@ -91,6 +91,24 @@ await test('Two humans match exactly once and answer keys stay hidden',async()=>
  const state=(await asUser(0,()=>q('select public.get_match_state($1) data',[mid])))[0].data;
  assert.equal(state.question.correct_option_id,undefined);assert.equal(state.result,null);
 });
+const photoFixture='iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAAAAAB3tzPbAAAAO0lEQVR4nO3BMQEAAADCoPVPbQ0PoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgHcDkMAAAZ1kLtkAAAAASUVORK5CYII=';
+const savePortrait=(i,portrait,data=null)=>asUser(i,()=>q('select public.save_profile_portrait($1,$2,$3,$4)',[`Student ${i}`,`+91987654321${i}`,portrait,data]));
+const readPhoto=(i,photo,match=null)=>asUser(i,async()=>(await q('select public.get_player_photo($1,$2) data',[photo,match]))[0].data);
+await test('Only owner or current rival can load gallery pixels; polls contain only a reference',async()=>{
+ await savePortrait(0,'gallery',photoFixture);
+ const state=(await asUser(1,()=>q('select public.get_match_state($1) data',[mid])))[0].data;
+ const ref=state.players.find(p=>p.id===ids[0]).avatar_url;
+ assert.match(ref,/^photo:/);assert.ok(!JSON.stringify(state).includes(photoFixture));
+ const key=ref.slice(6);
+ assert.equal(await readPhoto(0,key),photoFixture); assert.equal(await readPhoto(1,key,mid),photoFixture);
+ assert.equal(await readPhoto(2,key,mid),null);assert.equal(await readPhoto(1,key),null);
+ await savePortrait(0,'preset:curie');assert.equal(await readPhoto(0,key),null);
+});
+await test('Bad portraits roll back profile changes and originals are not retained after deletion',async()=>{
+ await asUser(0,()=>rejects(()=>q("select public.save_profile_portrait('Changed Name','+919876543210','gallery','invalid!')"),/invalid|INVALID/i));
+ assert.equal((await q('select full_name from public.profiles where id=$1',[ids[0]]))[0].full_name,'Student 0');
+ await savePortrait(1,'gallery',photoFixture);
+});
 await test('Duplicate live submissions locked; result revealed only once both answer',async()=>{
  const state=(await asUser(0,()=>q('select public.get_match_state($1) data',[mid])))[0].data;
  const option=state.question.options[0].id;
@@ -155,6 +173,47 @@ await test('A complete bot battle advances server-side and awards rewards once',
  assert.equal((await q('select status from public.matches where id=$1',[bot]))[0].status,'completed');
  assert.ok((await q('select xp_gained from public.match_players where match_id=$1 and user_id=$2',[bot,ids[0]]))[0].xp_gained>=70);
 });
+await test('An early answer unlocks exactly one daily question, resumes there, and retries once',async()=>{
+ const attempt=(await asUser(1,()=>q('select public.start_daily_attempt() data')))[0].data;
+ const args=[attempt.attempt_id,0,attempt.question.options[0].id];
+ await asUser(1,()=>q('select public.submit_daily_answer($1,$2,$3)',args));
+ const next=(await asUser(1,()=>q('select public.get_daily_question($1,1) data',[args[0]])))[0].data;
+ assert.ok(new Date(next.started_at)<new Date(attempt.question.deadline_at));
+ await asUser(1,()=>q('select public.submit_daily_answer($1,$2,$3)',args));
+ const resumed=(await asUser(1,()=>q('select public.start_daily_attempt() data')))[0].data;
+ assert.equal(resumed.question_index,1);assert.equal(resumed.question.deadline_at,next.deadline_at);
+ await asUser(1,()=>rejects(()=>q('select public.get_daily_question($1,2)',[args[0]]),/QUESTION_NOT_ACTIVE/));
+ for(let i=1;i<attempt.question_count;i++)await asUser(1,()=>q('select public.submit_daily_answer($1,$2,null)',[args[0],i]));
+ const result=(await asUser(1,()=>q('select public.start_daily_attempt() data')))[0].data;
+ assert.equal(result.completed,true);
+});
+await test('Returning after a missed question can finish immediately on the last answer',async()=>{
+ const attempt=(await asUser(2,()=>q('select public.start_daily_attempt() data')))[0].data;
+ await q("update public.daily_attempts set started_at=now()-make_interval(secs=>$2) where id=$1",[attempt.attempt_id,attempt.question.time_limit_seconds+1]);
+ const resume=(await asUser(2,()=>q('select public.start_daily_attempt() data')))[0].data;
+ assert.equal(resume.question_index,1);
+ for(let i=1;i<resume.question_count;i++)await asUser(2,()=>q('select public.submit_daily_answer($1,$2,null)',[resume.attempt_id,i]));
+ assert.equal((await asUser(2,()=>q('select public.finish_daily_attempt($1) data',[resume.attempt_id])))[0].data.score,0);
+});
+await test('Category pages, learner directory and atomic JSON imports enforce roles and preserve topics',async()=>{
+ const row={question:'What is 15% of 200?',option_a:'25',option_b:'30',option_c:'35',option_d:'40',correct_answer:'B',subject:'Quantitative Aptitude',topic:'Percentage',difficulty:'Easy',explanation:'15% of 200 = 30'};
+ const submit=(rows)=>asUser(2,()=>q('select public.admin_import_questions($1::jsonb) data',[JSON.stringify({questions:rows})]));
+ const before=(await q('select count(*)::int n from public.questions'))[0].n;
+ await rejects(()=>submit([row,{...row,correct_answer:'X'}]),/Question 2/);
+ assert.equal((await q('select count(*)::int n from public.questions'))[0].n,before);
+ const many=Array.from({length:55},(_,i)=>({...row,question:row.question+' #'+i}));
+ assert.equal((await submit(many))[0].data.imported,55);
+ assert.equal((await submit(many))[0].data.already_imported,true);
+ const groups=(await asUser(2,()=>q('select public.admin_question_groups($1) data',['#'])))[0].data.categories;
+ const first=(await asUser(2,()=>q('select public.admin_question_page($1,$2) data',[groups[0].id,'#'])))[0].data.rows;
+ assert.equal(first.length,50);assert.equal(first[0].topic_name,'Percentage');assert.equal(first[0].options.find(o=>o.is_correct).option_text,'30');
+ const more=(await asUser(2,()=>q('select public.admin_question_page($1,$2,$3) data',[groups[0].id,'#',first.at(-1).id])))[0].data.rows;
+ assert.equal(new Set([...first,...more].map(o=>o.id)).size,55);
+ const users=(await asUser(2,()=>q('select public.admin_user_page() data')))[0].data.rows;assert.ok(users.some(u=>u.phone));assert.ok(!('fcm_token' in users[0]));
+ for (const sql of ['select public.admin_user_page()','select public.admin_question_groups()', "select public.admin_import_questions('{}')"]){
+   await asUser(0,()=>rejects(()=>q(sql),/ADMIN_REQUIRED/));
+ }
+});
 await test('Expired daily attempts auto-submit once and award a streak',async()=>{
  const aid=(await q('select id from public.daily_attempts where user_id=$1',[ids[0]]))[0].id;
  await q("update public.daily_attempts set started_at=now()-interval '1 hour' where id=$1",[aid]);
@@ -196,9 +255,17 @@ await test('Completed battle report exposes real timing and both choices only to
  assert.equal(partial.question_count,10);assert.equal(partial.rounds_played,1);
  assert.equal(partial.questions.length,1); // Never describe unplayed questions as incorrect.
 });
+await test('Report portraits are visible to the two participants after the match',async()=>{
+ const report=(await asUser(0,()=>q('select public.get_match_review($1) data',[mid])))[0].data;
+ assert.equal(report.players.find(p=>p.id===ids[0]).avatar_url,'preset:curie');
+ const key=report.players.find(p=>p.id===ids[1]).avatar_url.slice(6);
+ assert.equal(await readPhoto(0,key,mid),photoFixture);
+ assert.equal(await readPhoto(2,key,mid),null);
+});
 await test('Account deletion is service-only and removes personal data without breaking history',async()=>{
  await asUser(0,()=>rejects(()=>q('select public.anonymize_account($1)',[ids[1]]),/permission denied/));
  await q('select public.anonymize_account($1)',[ids[1]]);
+ assert.equal((await q('select count(*)::int n from sj_private.player_photos where owner_id=$1',[ids[1]]))[0].n,0);
  await q('delete from auth.users where id=$1',[ids[1]]);
  const p=(await q('select full_name,email,phone,auth_user_id,profile_completed from public.profiles where id=$1',[ids[1]]))[0];
  assert.equal(p.full_name,'Deleted learner');assert.equal(p.email,null);assert.equal(p.phone,null);assert.equal(p.auth_user_id,null);assert.equal(p.profile_completed,false);

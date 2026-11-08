@@ -4,15 +4,15 @@ This is a runnable initial implementation. The eight acceptance phases in the br
 
 ## Verified locally
 
-- **20 Flutter widget/unit tests passed; analyzer has zero issues.** Coverage: profile-route guards, validation, bounded preview scoring, option states, accessible timer, practice answer locking/advancement, light/dark home at 375 px and 130% text scale.
-- **23 embedded Postgres checks passed.** Coverage: migrations (excluding Cron), seeds, profile completion/phone uniqueness, role detection/revocation, private data and answer-key access, protected rating writes, restricted admin RPCs, scoring, human matching, duplicate submissions, reveal gates, idempotent rewards, bot race recovery, complete bot round, daily one-attempt/resume and automatic finish/streak.
-- Browser walkthrough: login → explicitly labelled local preview → Home → category → matchmaking explanation → quiz → locked answer with explanation → Home. Phone viewport 375 × 812 and desktop layout inspected.
+- **34 Flutter widget/unit tests passed; analyzer has zero issues.** Coverage: profile-route guards, validation, bounded preview scoring, option states, accessible timer, practice answer locking/advancement, light/dark home at 375 px and 130% text scale.
+- **25 embedded Postgres checks passed.** Coverage: migrations (excluding Cron), seeds, profile completion/phone uniqueness, role detection/revocation, private data and answer-key access, protected rating writes, restricted admin RPCs, scoring, human matching, duplicate submissions, reveal gates, idempotent rewards, bot race recovery, complete bot round, daily one-attempt/resume and automatic finish/streak.
+- Historical walkthrough (before the preview button was removed): login → explicitly labelled local preview → Home → category → matchmaking explanation → quiz → locked answer with explanation → Home. Phone viewport 375 × 812 and desktop layout inspected.
 - Optimized release web build and Android debug APK build succeeded. APK: `build/app/outputs/flutter-apk/app-debug.apk` (Web Google client ID is configured; native sign-in was confirmed by the owner).
 - Screenshots in `docs/screenshots/`; supplied PNG logo and launcher export in `assets/brand/`.
 
 ## Needs your account configuration
 
-1. Initial SQL setup was run by the owner. The owner also confirmed the new battle-report migration `202611080009_battle_reports.sql` succeeded.
+1. Initial SQL setup was run by the owner. The owner also confirmed the battle-report and player-portrait migrations (009 and 010) both succeeded.
 2. Web and Android Google clients are configured. The owner confirmed successful browser sign-in and then successful native sign-in on the installed Moto g64 APK.
 3. Deploy the account-deletion Edge Function.
 4. Review/accept local Android SDK licenses; configure signing before a release build.
@@ -22,7 +22,7 @@ The owner reports running the hosted setup SQL and enabling Google. Read-only Au
 ## Acceptance gaps and remaining work
 
 - Native release sign-in, real two-device Realtime, Cron execution and Edge Function deletion still need staging tests. The embedded harness stubs Auth identity and Realtime transport and cannot demonstrate these integrations.
-- Rematch requests/acceptance, result-card sharing, Lottie celebrations, illustrated avatars, optional exam/avatar onboarding and the intro carousel remain to implement.
+- Rematch requests/acceptance, result-card sharing, Lottie celebrations, optional target-exam onboarding and the intro carousel remain to implement.
 - Push notification delivery/reminders, Sentry and release analytics configuration are not implemented. FCM requires a notification project and server-side credentials.
 - Core admin editing is functional. Advanced content tools remain: rich text/LaTeX and media upload/rendering, full subtopic management UI, drag reorder, question bulk actions, duplicate-similarity detection, CSV error-report export, and manual daily question picking. The SQL supports subtopic changes and manual daily question lists; the UI currently uses auto-fill scheduling. CSV/XLSX imports produce drafts and report invalid rows before import.
 - Leaderboards currently query live data and cap results; materialised-view refresh, all category filtering variants and full keyset pagination need finishing. Profile uses category progress bars rather than a radar chart.
@@ -60,3 +60,25 @@ Completed battles now show actual comparative timing, accuracy, unanswered round
 Validation: all 20 Flutter tests, zero-issue analysis, and 23 embedded PostgreSQL checks passed. These checks do not substitute for a real two-device battle or personal listening review.
 
 Android debug APK and optimized web builds succeeded for this update. The APK was installed successfully over USB on Moto g64 5G, launched to the signed-in Home screen, and the new logo, fire streak and tier badge were visually checked. Native audio players decoded the bundled 44.1 kHz assets with no `SJ_AUDIO_UNAVAILABLE` or unhandled-exception markers during the observed session. A live bot battle was in progress during verification, so automated taps stopped; final loudness and full new-report review on a real completed match remain user listening/staging checks. Both bundles were checked for the ElevenLabs authoring credential: absent. The APK contains 13 playable MP3 files and excludes the raw originals and `.env`.
+
+## Sound interruption fix
+
+Cue playback now allocates an independent voice and releases it only after native completion. New cues no longer stop a reused player; Android effects do not request focus from each other. Music ducking follows actual active cue count rather than guessed lengths. The v3 final-round, wrong-answer and timeout effects were replaced with a lighter rising chime, gentle descending pair and dry double knock. The existing loss tail was remastered. Other owner-regenerated v3 effects and music were preserved. Generated effects are no longer hard-trimmed with `-t`; final fades and silence finish their tails.
+
+All 23 Flutter tests passed, including overlapping-voice and ducking regressions; analysis has zero issues. Android debug and web release builds succeeded. The replacement files decode completely and end below -60 dBFS. The APK's bundled replacements match their source hashes and contain no ElevenLabs key. Device installation/listening results are recorded separately; subjective sound balance still needs the owner's ears.
+
+The sound-fix APK was installed successfully with `adb install -r` on Moto g64 (`ZD222M868Z`) and the updated activity launched successfully. No automated gameplay inputs were sent. The second phone was not connected during this update.
+
+## Reference-led visual revamp
+
+The owner requested SJLearnInitial's visual style plus the supplied podium leaderboard reference. The implemented redesign uses navy headers, offline Poppins typography, cool backgrounds, rounded white cards, daily/battle features, a practice grid, explicit subject selection, a persistent start action, progress cards and consistent game controls. Student navigation is Home / Leaderboard / Progress, with History accessible from Home and Progress and Admin retained for authorised staff. The new leaderboard highlights personal standing, displays a vector medal podium and server-provided ties, supports weekly/all-time/daily modes, and lazily builds ranking rows. No hosted SQL or OAuth changes are required.
+
+All 30 Flutter tests passed and analysis has zero issues. Responsive checks cover phone/landscape/tablet widths, 130% and 200% text, reduced motion and both themes. Additional tests exercise loading, errors/retry, unranked users, a two-person tied podium, period switching and subject/timer routing. Contrast was checked numerically for the primary, secondary and muted text pairs. See `docs/ui/REVAMP.md` and labelled preview screenshots in `docs/screenshots/`.
+
+The redesigned Android debug and optimized web builds succeeded. The APK was installed successfully over USB on Moto g64 (`ZD222M868Z`) and launched with the existing signed-in session. The native Progress screen loaded hosted battle totals and subject accuracy; its capture is `docs/screenshots/moto-g64-revamp-progress.png` (local only). The device was left under the owner's control. New fonts and OFL licenses are bundled; Android and web bundles contain no ElevenLabs authoring credential. The local development server was not restarted.
+
+## Portraits and arena motion
+
+Login now follows the supplied violet-header/rounded-sheet reference and has no preview entry. Learners can keep initials, choose one of four illustrated portraits, or select a gallery image at onboarding and later under Progress → Edit player profile. Only a centre-cropped 192 px PNG is uploaded. Gallery image bytes stay out of polling responses; the private read function checks account or active match membership. Deletion and replacement remove previous thumbnails.
+
+Match search displays local second boundaries synced to the server. The duel reveal uses the existing server countdown without extending a turn. Numeric transitions, podium entrances, score-chart tracing and review entrances respect reduced motion. Vector enamel trophies are bundled in code. Screenshot: [login](screenshots/login-portraits.png).

@@ -1,3 +1,4 @@
+import '../../../shared/arena_motion.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../auth/data/session.dart';
@@ -93,7 +94,7 @@ class _ReviewState extends ConsumerState<ReviewScreen> {
         .where((q) => !wrongOnly || q['is_correct'] != true)
         .toList();
     return Scaffold(
-      appBar: AppBar(title: const Text('Answer review')),
+      appBar: ArenaBar(title: const Text('Answer review')),
       body: PageBody(
         maxWidth: 700,
         child: ListView(
@@ -111,82 +112,91 @@ class _ReviewState extends ConsumerState<ReviewScreen> {
                 message: 'Keep practising to build your confidence.',
               ),
             ...questions.map(
-              (q) => Padding(
-                padding: const EdgeInsets.only(bottom: 24),
-                child: ArenaCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Question ${(q['question_index'] as int? ?? widget.questions.indexOf(q)) + 1}',
-                              style: context.type.bodySmall,
-                            ),
-                          ),
-                          if (q['multiplier'] == 2)
-                            Text(
-                              'Double points',
-                              style: TextStyle(
-                                color: context.tokens.warning,
-                                fontSize: 12,
+              (q) => Arrive(
+                key: ValueKey(
+                  q['question_index'] ?? widget.questions.indexOf(q),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 24),
+                  child: ArenaCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Question ${(q['question_index'] as int? ?? widget.questions.indexOf(q)) + 1}',
+                                style: context.type.bodySmall,
                               ),
                             ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      if (q['category_name'] != null)
-                        Text(
-                          '${q['category_name']} · ${q['difficulty']} · ${q['time_limit_seconds']}s',
-                          style: context.type.bodySmall,
+                            if (q['multiplier'] == 2)
+                              Text(
+                                'Double points',
+                                style: TextStyle(
+                                  color: context.tokens.warning,
+                                  fontSize: 12,
+                                ),
+                              ),
+                          ],
                         ),
-                      const SizedBox(height: 12),
-                      Text(q['question_text'], style: context.type.titleMedium),
-                      const SizedBox(height: 20),
-                      ...(q['options'] as List).asMap().entries.map(
-                        (e) => Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: OptionTile(
-                            label: String.fromCharCode(65 + e.key),
-                            text: e.value['option_text'],
-                            state: e.value['id'] == q['correct_option_id']
-                                ? OptionState.correct
-                                : e.value['id'] == q['selected_option_id']
-                                ? OptionState.wrong
-                                : OptionState.disabled,
+                        const SizedBox(height: 8),
+                        if (q['category_name'] != null)
+                          Text(
+                            '${q['category_name']} · ${q['difficulty']} · ${q['time_limit_seconds']}s',
+                            style: context.type.bodySmall,
+                          ),
+                        const SizedBox(height: 12),
+                        Text(
+                          q['question_text'],
+                          style: context.type.titleMedium,
+                        ),
+                        const SizedBox(height: 20),
+                        ...(q['options'] as List).asMap().entries.map(
+                          (e) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: OptionTile(
+                              label: String.fromCharCode(65 + e.key),
+                              text: e.value['option_text'],
+                              state: e.value['id'] == q['correct_option_id']
+                                  ? OptionState.correct
+                                  : e.value['id'] == q['selected_option_id']
+                                  ? OptionState.wrong
+                                  : OptionState.disabled,
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      _AnswerSummary(
-                        label: 'Your answer',
-                        question: q,
-                        optionId: q['selected_option_id'],
-                        responseMs: q['response_ms'],
-                        points: q['points'],
-                      ),
-                      if (q.containsKey('opponent_option_id')) ...[
                         const SizedBox(height: 12),
                         _AnswerSummary(
-                          label: 'Opponent answer',
+                          label: 'Your answer',
                           question: q,
-                          optionId: q['opponent_option_id'],
-                          responseMs: q['opponent_response_ms'],
-                          points: q['opponent_points'],
+                          optionId: q['selected_option_id'],
+                          responseMs: q['response_ms'],
+                          points: q['points'],
                         ),
+                        if (q.containsKey('opponent_option_id')) ...[
+                          const SizedBox(height: 12),
+                          _AnswerSummary(
+                            label: 'Opponent answer',
+                            question: q,
+                            optionId: q['opponent_option_id'],
+                            responseMs: q['opponent_response_ms'],
+                            points: q['opponent_points'],
+                          ),
+                        ],
+                        const Divider(height: 32),
+                        Text('Why this answer', style: context.type.titleSmall),
+                        const SizedBox(height: 8),
+                        SelectableText(q['explanation'] ?? ''),
+                        if (q['id'] != null &&
+                            !ref.read(sessionProvider).preview)
+                          TextButton.icon(
+                            onPressed: () => report(q['id']),
+                            icon: const Icon(Icons.flag_outlined),
+                            label: const Text('Report this question'),
+                          ),
                       ],
-                      const Divider(height: 32),
-                      Text('Why this answer', style: context.type.titleSmall),
-                      const SizedBox(height: 8),
-                      SelectableText(q['explanation'] ?? ''),
-                      if (q['id'] != null && !ref.read(sessionProvider).preview)
-                        TextButton.icon(
-                          onPressed: () => report(q['id']),
-                          icon: const Icon(Icons.flag_outlined),
-                          label: const Text('Report this question'),
-                        ),
-                    ],
+                    ),
                   ),
                 ),
               ),

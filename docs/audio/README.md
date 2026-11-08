@@ -6,6 +6,8 @@ Twelve short original cues and one 30-second instrumental track were generated w
 
 Effects cover selection, correct/wrong answers, the last three seconds, match found, question start, final round, win/loss/draw, tier promotion and timeout. Live correctness cues run only after the server reveals the answer. Stable event IDs prevent repeated polling or broadcasts from replaying a cue.
 
+Each cue owns its player until native completion. Overlapping cues never reuse or stop an active voice, and effects use Android focus `none` so they do not request focus from each other. Music volume follows the actual number of active cues, rather than a guessed duration timer. Up to eight voices may overlap; excess cues are skipped instead of interrupting an audible cue.
+
 Music starts only in matchmaking and quiz routes, continues across the matchmaking-to-battle handover, ducks for cues, pauses when the app is inactive, and stops when gameplay ends. Effects and music have independent switches and volume sliders in Settings and the speaker button during gameplay. Preferences persist locally. iOS uses the ambient audio category, respecting silent mode.
 
 ## Authoring
@@ -20,3 +22,15 @@ python3 tools/audio/generate.py
 The raw originals are retained under `assets/audio/raw/` for editing. Flutter's asset declaration bundles only the top-level playable files and manifest. Verify asset inclusion and absence of authoring credentials when preparing a release.
 
 Controller tests cover route ownership, background/resume, independent muting, event deduplication and recovery from a playback failure. Real device listening remains the final check for volume balance and personal preference.
+
+## Sound cutoff fix
+
+The owner selected `eleven_text_to_sound_v3` for effects and `music_v2_5` for music. The three requested replacements use v3: final round is a light rising glass-marimba triad, wrong is a short descending mallet pair, and timeout is a gentle double knock. The existing loss clip was remastered to finish its previously abrupt tail. Music and the other v3 effects supplied before this fix are preserved.
+
+The authoring tool retains each full generated effect, fades its final 140 ms, and appends 80 ms of silence. It no longer hard-caps effects with `-t`. Use targeted replacement to avoid regenerating unrelated assets:
+
+```sh
+python3 tools/audio/generate.py --sounds final_round wrong timeout --replace
+```
+
+Regression checks cover three overlapping cues, completion of just one voice, bounded concurrency, and keeping music ducked until the last cue completes.

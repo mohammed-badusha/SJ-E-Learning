@@ -1,13 +1,22 @@
 {
-  "flutter_tests": 20,
+  "flutter_tests": 30,
   "postgres_checks": 23,
   "analyzer": "zero issues",
   "android_build": "debug arm64 succeeded",
   "web_build": "release succeeded",
   "hosted_report_migration": "owner confirmed success",
   "usb_install": "Moto g64 succeeded",
-  "native_launch": "signed-in home confirmed",
+  "native_launch": "Redesign installed; signed-in Progress and real hosted stats observed",
   "audio_secret_in_android_or_web": false,
   "live_two_device_test": "not performed",
-  "apk_sha256": "75c28967bc91f3b8c88a1b60eec574dba816b2c2c2b097f7d423663327a71891"
+  "apk_sha256": "f576ce167964895801f24f887029c15798a539de1fff172d7078068baee0f422",
+  "audio_fix": "independent cue voices; native completion cleanup; completion-based music ducking",
+  "replacement_effects": [
+    "final_round",
+    "wrong",
+    "timeout"
+  ],
+  "replacement_model": "eleven_text_to_sound_v3",
+  "design_reference": "SJLearnInitial @ a69ca6e8c009465b9a236c7b535104fb6967b96d",
+  "ui_checks": "Phone, landscape, tablet, both themes, 130% and 200% text, reduced motion"
 }

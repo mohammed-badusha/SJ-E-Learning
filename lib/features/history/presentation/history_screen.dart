@@ -45,7 +45,7 @@ class _HistoryState extends ConsumerState<HistoryScreen> {
               .toList()
         : <Map<String, dynamic>>[];
     return Scaffold(
-      appBar: AppBar(title: const Text('Match history')),
+      appBar: ArenaBar(title: const Text('Match history')),
       body: PageBody(
         maxWidth: 800,
         child: FutureBuilder(

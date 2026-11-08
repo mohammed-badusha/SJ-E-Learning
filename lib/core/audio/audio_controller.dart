@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
+import 'cue_mixer.dart';
 
 final audioBackendProvider = Provider<AudioBackend>(
   (ref) => DeviceAudioBackend(),
@@ -15,26 +16,26 @@ final audioProvider = Provider<AudioController>((ref) {
 });
 
 enum GameCue {
-  select('select', 500),
-  correct('correct', 800),
-  wrong('wrong', 650),
-  tick('tick', 500),
-  matchFound('match_found', 1200),
-  questionStart('question_start', 500),
-  finalRound('final_round', 1100),
-  win('win', 2000),
-  loss('loss', 1100),
-  draw('draw', 1100),
-  levelUp('level_up', 1400),
-  timeout('timeout', 700);
+  select('select'),
+  correct('correct'),
+  wrong('wrong'),
+  tick('tick'),
+  matchFound('match_found'),
+  questionStart('question_start'),
+  finalRound('final_round'),
+  win('win'),
+  loss('loss'),
+  draw('draw'),
+  levelUp('level_up'),
+  timeout('timeout');
 
-  const GameCue(this.file, this.durationMs);
+  const GameCue(this.file);
   final String file;
-  final int durationMs;
   String get asset => 'audio/$file.mp3';
 }
 
 abstract class AudioBackend {
+  Stream<int> get cueActivity;
   Future<void> playCue(String asset, double volume);
   Future<void> startMusic(double volume);
   Future<void> resumeMusic(double volume);
@@ -47,8 +48,9 @@ abstract class AudioBackend {
 
 class DeviceAudioBackend implements AudioBackend {
   AudioPlayer? _music;
-  final List<AudioPlayer> _cues = [];
-  int _next = 0;
+  final _mixer = CueMixer(createVoice: _DeviceCueVoice.new);
+  @override
+  Stream<int> get cueActivity => _mixer.activity;
   Future<void>? _initializing;
   Future<void> _ready() => _initializing ??= _initialize();
   Future<void> _initialize() async {
@@ -63,20 +65,11 @@ class DeviceAudioBackend implements AudioBackend {
     _music = AudioPlayer();
     await _music!.setAudioContext(context);
     await _music!.setReleaseMode(ReleaseMode.loop);
-    for (var i = 0; i < 2; i++) {
-      final player = AudioPlayer();
-      _cues.add(player);
-      await player.setAudioContext(context);
-      await player.setReleaseMode(ReleaseMode.stop);
-    }
   }
 
   @override
   Future<void> playCue(String asset, double volume) async {
-    await _ready();
-    final player = _cues[_next++ % _cues.length];
-    await player.stop();
-    await player.play(AssetSource(asset), volume: volume);
+    await _mixer.play(asset, volume);
   }
 
   @override
@@ -109,9 +102,7 @@ class DeviceAudioBackend implements AudioBackend {
 
   @override
   Future<void> stopCues() async {
-    for (final player in _cues) {
-      await player.stop();
-    }
+    await _mixer.stop();
   }
 
   @override
@@ -121,11 +112,36 @@ class DeviceAudioBackend implements AudioBackend {
         await _initializing;
       } catch (_) {}
     }
-    for (final player in _cues) {
-      await player.dispose();
-    }
+    await _mixer.close();
     await _music?.dispose();
   }
+}
+
+class _DeviceCueVoice implements CueVoice {
+  final _player = AudioPlayer();
+  @override
+  Stream<void> get completed => _player.onPlayerComplete;
+  @override
+  Future<void> play(String asset, double volume) async {
+    await _player.setAudioContext(
+      AudioContext(
+        android: const AudioContextAndroid(
+          usageType: AndroidUsageType.game,
+          contentType: AndroidContentType.sonification,
+          // Music owns focus. Cue voices mix without pausing each other.
+          audioFocus: AndroidAudioFocus.none,
+        ),
+        iOS: AudioContextIOS(category: AVAudioSessionCategory.ambient),
+      ),
+    );
+    await _player.setReleaseMode(ReleaseMode.stop);
+    await _player.play(AssetSource(asset), volume: volume);
+  }
+
+  @override
+  Future<void> stop() => _player.stop();
+  @override
+  Future<void> dispose() => _player.dispose();
 }
 
 /// Audio is presentation only. Correct/wrong cues are triggered after server reveal.
@@ -143,6 +159,10 @@ class AudioController extends ChangeNotifier with WidgetsBindingObserver {
           .toDouble()
           .clamp(0, 1);
     }
+    _cueSubscription = backend.cueActivity.listen((count) {
+      _activeCues = count;
+      _run(_syncMusicVolume);
+    });
   }
   final AudioBackend backend;
   final bool observeLifecycle;
@@ -154,7 +174,15 @@ class AudioController extends ChangeNotifier with WidgetsBindingObserver {
       _closed = false,
       _musicStarted = false,
       _musicPlaying = false;
-  Timer? _duckTimer;
+  late final StreamSubscription<int> _cueSubscription;
+  int _activeCues = 0;
+  double get _musicVolume => _activeCues > 0 ? musicLevel * .28 : musicLevel;
+  Future<void> _syncMusicVolume() async {
+    if (_musicPlaying && musicEnabled && _foreground) {
+      await backend.musicVolume(_musicVolume);
+    }
+  }
+
   Future<void> _pending = Future.value();
   Future<void> get idle => _pending;
   void _notify() {
@@ -212,11 +240,11 @@ class AudioController extends ChangeNotifier with WidgetsBindingObserver {
         return;
       }
       if (!_musicStarted) {
-        await backend.startMusic(musicLevel);
+        await backend.startMusic(_musicVolume);
         _musicStarted = true;
         _musicPlaying = true;
       } else if (!_musicPlaying) {
-        await backend.resumeMusic(musicLevel);
+        await backend.resumeMusic(_musicVolume);
         _musicPlaying = true;
       }
     });
@@ -245,7 +273,7 @@ class AudioController extends ChangeNotifier with WidgetsBindingObserver {
   void setMusicVolume(double value) {
     musicLevel = value.clamp(0, 1);
     _save('music_volume', musicLevel);
-    if (_musicPlaying) _run(() => backend.musicVolume(musicLevel));
+    _run(_syncMusicVolume);
     _notify();
   }
 
@@ -257,19 +285,13 @@ class AudioController extends ChangeNotifier with WidgetsBindingObserver {
       if (!effectsEnabled || !_foreground) return;
       if (_musicPlaying) await backend.musicVolume(musicLevel * .28);
       await backend.playCue(cue.asset, effectVolume);
-      _duckTimer?.cancel();
-      _duckTimer = Timer(Duration(milliseconds: cue.durationMs + 120), () {
-        if (_musicPlaying && musicEnabled && _foreground) {
-          _run(() => backend.musicVolume(musicLevel));
-        }
-      });
+      await _syncMusicVolume();
     });
   }
 
   void foreground(bool value) {
     _foreground = value;
     if (!value) {
-      _duckTimer?.cancel();
       _run(backend.stopCues);
     }
     _reconcile();
@@ -282,7 +304,7 @@ class AudioController extends ChangeNotifier with WidgetsBindingObserver {
   void dispose() {
     if (_closed) return;
     _closed = true;
-    _duckTimer?.cancel();
+    unawaited(_cueSubscription.cancel());
     _owners.clear();
     if (observeLifecycle) WidgetsBinding.instance.removeObserver(this);
     unawaited(_pending.then((_) => backend.close()));

@@ -1,3 +1,7 @@
+import '../../../shared/arena_motion.dart';
+import '../../../shared/trophy.dart';
+import '../../../shared/arena_panel.dart';
+import '../../../shared/player_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -56,7 +60,7 @@ class _BattleResultState extends ConsumerState<BattleResultScreen> {
     final other = initial.firstWhere((p) => p.id != widget.viewerId);
     final abandoned = widget.initialState['status'] == 'abandoned';
     return Scaffold(
-      appBar: AppBar(
+      appBar: ArenaBar(
         title: const Text('Battle report'),
         automaticallyImplyLeading: false,
         actions: [
@@ -78,117 +82,110 @@ class _BattleResultState extends ConsumerState<BattleResultScreen> {
             return ListView(
               padding: const EdgeInsets.all(24),
               children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 64,
-                      height: 64,
-                      decoration: BoxDecoration(
-                        color: context.tokens.warning.withValues(alpha: .1),
-                        borderRadius: BorderRadius.circular(16),
+                ArenaPanel(
+                  child: Column(
+                    children: [
+                      if (mine.result == 'win') const Trophy(size: 36),
+                      Text(
+                        abandoned
+                            ? 'Match ended'
+                            : switch (mine.result) {
+                                'win' => 'You won',
+                                'draw' => 'Draw',
+                                'loss' => 'Defeat',
+                                _ => 'Battle complete',
+                              },
+                        textAlign: TextAlign.center,
+                        style: context.type.headlineMedium?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                      child: Icon(
-                        mine.result == 'win'
-                            ? Icons.emoji_events_rounded
-                            : mine.result == 'draw'
-                            ? Icons.handshake_outlined
-                            : Icons.sports_score_rounded,
-                        size: 36,
-                        color: context.tokens.warning,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
+                      const SizedBox(height: 16),
+                      Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            abandoned
-                                ? 'Match ended'
-                                : mine.result == 'win'
-                                ? 'You won'
-                                : mine.result == 'draw'
-                                ? 'A well-matched draw'
-                                : 'Battle complete',
-                            style: context.type.headlineMedium,
+                          Expanded(
+                            child: _PlayerScore(
+                              player: mine,
+                              reference:
+                                  mine.avatarUrl ??
+                                  me.avatarUrl ??
+                                  ref.read(sessionProvider).profile?.avatarUrl,
+                              you: true,
+                              matchId: widget.matchId,
+                            ),
                           ),
-                          Text(
-                            abandoned
-                                ? 'No rating change'
-                                : mine.result == 'loss'
-                                ? 'A loss, with progress to keep'
-                                : 'Review the round and build on it',
-                            style: TextStyle(
-                              color: context.tokens.secondary,
-                              fontSize: 14,
+                          const Padding(
+                            padding: EdgeInsets.only(top: 20),
+                            child: Text(
+                              'VS',
+                              style: TextStyle(
+                                color: ArenaTokens.gold,
+                                fontStyle: FontStyle.italic,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: _PlayerScore(
+                              player: rival,
+                              reference:
+                                  rival.avatarUrl ??
+                                  other.avatarUrl ??
+                                  ((report?.isBot ??
+                                          (widget.initialState['mode'] ==
+                                              'bot'))
+                                      ? 'preset:explorer'
+                                      : null),
+                              you: false,
+                              matchId: widget.matchId,
                             ),
                           ),
                         ],
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                ArenaCard(
-                  child: Row(
-                    children: [
-                      Expanded(child: _PlayerScore(player: mine, you: true)),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: Text('vs', style: context.type.bodySmall),
-                      ),
-                      Expanded(child: _PlayerScore(player: rival, you: false)),
                     ],
                   ),
                 ),
                 if (report?.isBot == true && report?.labelBot == true) ...[
                   const SizedBox(height: 12),
-                  const Text(
-                    'Practice opponent · Bot matches use reduced rating changes',
-                  ),
+                  const Text('Practice match · Reduced rating change'),
                 ],
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _Stat(
-                        label: 'Rating change',
-                        value:
-                            '${mine.ratingChange >= 0 ? '+' : ''}${mine.ratingChange}',
-                        icon: Icons.trending_up_rounded,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _Stat(
-                        label: 'XP earned',
-                        value: '+${mine.xp}',
-                        icon: Icons.workspace_premium_outlined,
-                      ),
-                    ),
-                  ],
+                const SizedBox(height: 16),
+                PrimaryButton(
+                  label: 'Review every answer',
+                  icon: Icons.fact_check_outlined,
+                  onPressed: report == null || report.questions.isEmpty
+                      ? null
+                      : () => context.push('/review', extra: report.questions),
                 ),
-                const SizedBox(height: 24),
-                if (RankTier.forRating(
-                      mine.ratingAfter ?? mine.ratingBefore,
-                    ).index >
-                    RankTier.forRating(mine.ratingBefore).index) ...[
-                  Text(
-                    'Promoted to ${RankTier.forRating(mine.ratingAfter!).label}',
-                    style: context.type.titleMedium,
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                ArenaCard(
-                  child: TierProgress(
-                    rating: mine.ratingAfter ?? mine.ratingBefore,
+                const SizedBox(height: 20),
+                IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: _Stat(
+                          label: 'Rating change',
+                          value:
+                              '${mine.ratingChange >= 0 ? '+' : ''}${mine.ratingChange}',
+                          icon: Icons.trending_up_rounded,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _Stat(
+                          label: 'XP earned',
+                          value: '+${mine.xp}',
+                          icon: Icons.workspace_premium_outlined,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 if (!snapshot.hasData && !snapshot.hasError) ...[
                   const SizedBox(height: 24),
-                  const ArenaCard(
-                    child: Text('Preparing your match breakdown…'),
-                  ),
+                  const ArenaSkeleton(layout: SkeletonLayout.report),
                 ],
                 if (snapshot.hasError && !abandoned) ...[
                   const SizedBox(height: 24),
@@ -203,7 +200,27 @@ class _BattleResultState extends ConsumerState<BattleResultScreen> {
                   ),
                 ],
                 if (report != null && report.advanced) ...[
-                  const SizedBox(height: 32),
+                  if (report.questions.isNotEmpty) ...[
+                    const SizedBox(height: 24),
+                    ArenaCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'How the battle unfolded',
+                            style: context.type.titleMedium,
+                          ),
+                          const SizedBox(height: 20),
+                          ScoreChart(
+                            yours: report.cumulativeScores(),
+                            opponent: report.cumulativeScores(opponent: true),
+                            opponentName: rival.name,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 22),
                   Text(
                     'Your round at a glance',
                     style: context.type.titleLarge,
@@ -307,25 +324,6 @@ class _BattleResultState extends ConsumerState<BattleResultScreen> {
                     ),
                   ),
                   if (report.questions.isNotEmpty) ...[
-                    const SizedBox(height: 24),
-                    ArenaCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'How the battle unfolded',
-                            style: context.type.titleMedium,
-                          ),
-                          const SizedBox(height: 20),
-                          ScoreChart(
-                            yours: report.cumulativeScores(),
-                            opponent: report.cumulativeScores(opponent: true),
-                            opponentName: rival.name,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
                     _CategoryBreakdown(questions: report.questions),
                   ],
                   const SizedBox(height: 16),
@@ -334,6 +332,21 @@ class _BattleResultState extends ConsumerState<BattleResultScreen> {
                     style: context.type.bodySmall,
                   ),
                 ],
+                if (RankTier.forRating(
+                      mine.ratingAfter ?? mine.ratingBefore,
+                    ).index >
+                    RankTier.forRating(mine.ratingBefore).index) ...[
+                  Text(
+                    'Promoted to ${RankTier.forRating(mine.ratingAfter!).label}',
+                    style: context.type.titleMedium,
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                ArenaCard(
+                  child: TierProgress(
+                    rating: mine.ratingAfter ?? mine.ratingBefore,
+                  ),
+                ),
                 if (report != null && !report.advanced) ...[
                   const SizedBox(height: 20),
                   const ArenaCard(
@@ -343,13 +356,6 @@ class _BattleResultState extends ConsumerState<BattleResultScreen> {
                   ),
                 ],
                 const SizedBox(height: 32),
-                PrimaryButton(
-                  label: 'Review every answer',
-                  icon: Icons.fact_check_outlined,
-                  onPressed: report == null || report.questions.isEmpty
-                      ? null
-                      : () => context.push('/review', extra: report.questions),
-                ),
                 const SizedBox(height: 12),
                 OutlinedButton(
                   onPressed: () => context.replace('/categories?mode=battle'),
@@ -374,29 +380,53 @@ class _BattleResultState extends ConsumerState<BattleResultScreen> {
 }
 
 class _PlayerScore extends StatelessWidget {
-  const _PlayerScore({required this.player, required this.you});
+  const _PlayerScore({
+    required this.player,
+    required this.reference,
+    required this.you,
+    required this.matchId,
+  });
   final BattlePlayerStats player;
+  final String? reference;
+  final String matchId;
   final bool you;
   @override
   Widget build(BuildContext context) => Column(
     children: [
-      TierBadge(rating: player.ratingAfter ?? player.ratingBefore, size: 44),
-      const SizedBox(height: 12),
-      SizedBox(
-        height: MediaQuery.textScalerOf(context).scale(14) * 3,
-        child: Center(
-          child: Text(
-            you ? 'You' : player.name,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: context.type.titleSmall,
-          ),
+      ArenaPortrait(
+        accent: you ? arenaLilac : arenaMint,
+        child: PlayerAvatar(
+          name: player.name,
+          reference: reference,
+          matchId: you ? null : matchId,
+          size: 56,
         ),
       ),
       const SizedBox(height: 8),
-      Text('${player.score}', style: context.type.headlineLarge),
-      Text('points', style: context.type.bodySmall),
+      Text(
+        you ? 'You' : 'Opponent',
+        style: TextStyle(fontSize: 12, color: you ? arenaLilac : arenaMint),
+      ),
+      SizedBox(
+        height: MediaQuery.textScalerOf(context).scale(14) * 2.9,
+        child: Center(
+          child: Text(
+            player.name,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: context.type.titleSmall?.copyWith(color: Colors.white),
+          ),
+        ),
+      ),
+      CountMetric(
+        player.score,
+        style: context.type.headlineLarge?.copyWith(color: Colors.white),
+      ),
+      const Text(
+        'points',
+        style: TextStyle(color: Colors.white70, fontSize: 12),
+      ),
     ],
   );
 }
@@ -419,7 +449,14 @@ class _Stat extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 12),
-        Text(value, style: context.type.headlineSmall),
+        if (int.tryParse(value) case final int n)
+          CountMetric(
+            n,
+            format: (v) => value.startsWith('+') ? '+$v' : '$v',
+            style: context.type.headlineSmall,
+          )
+        else
+          Text(value, style: context.type.headlineSmall),
       ],
     ),
   );

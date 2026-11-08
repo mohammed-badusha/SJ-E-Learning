@@ -92,6 +92,10 @@ class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
                 if (widget.question != null && !duplicate)
                   'id': widget.question!['id'],
                 'category_id': category,
+                if (category == widget.question?['category_id'])
+                  'subtopic_id': widget.question?['subtopic_id'],
+                if (widget.question?['image_url'] != null)
+                  'image_url': widget.question?['image_url'],
                 'question_text': text.text.trim(),
                 'explanation': explanation.text.trim(),
                 'difficulty': difficulty,
@@ -134,17 +138,30 @@ class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
           builder: (context, snapshot) => DropdownButtonFormField<String>(
             initialValue: category,
             decoration: const InputDecoration(labelText: 'Category'),
-            items:
-                snapshot.data
-                    ?.map(
-                      (c) => DropdownMenuItem(value: c.id, child: Text(c.name)),
-                    )
-                    .toList() ??
-                [],
+            items: [
+              for (final c in snapshot.data ?? <QuizCategory>[])
+                DropdownMenuItem(value: c.id, child: Text(c.name)),
+              if (category != null &&
+                  !(snapshot.data ?? <QuizCategory>[]).any(
+                    (c) => c.id == category,
+                  ))
+                DropdownMenuItem(
+                  value: category,
+                  child: Text(
+                    widget.question?['category_name'] ?? 'Current category',
+                  ),
+                ),
+            ],
             onChanged: canEdit ? (v) => setState(() => category = v) : null,
           ),
         ),
         const SizedBox(height: 16),
+        if (widget.question?['topic_name'] != null &&
+            category == widget.question?['category_id'])
+          Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: Text('Topic · ${widget.question!['topic_name']}'),
+          ),
         TextField(
           controller: text,
           enabled: canEdit,
@@ -264,7 +281,7 @@ class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
       ],
     );
     return Scaffold(
-      appBar: AppBar(
+      appBar: ArenaBar(
         title: Text(canEdit ? 'Question editor' : 'Question details'),
       ),
       body: LayoutBuilder(

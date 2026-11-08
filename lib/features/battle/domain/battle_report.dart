@@ -1,6 +1,7 @@
 class BattlePlayerStats {
   BattlePlayerStats.fromJson(Map<String, dynamic> json)
     : id = json['id'] as String,
+      avatarUrl = json['avatar_url'] as String?,
       name = json['full_name'] as String? ?? 'Learner',
       score = (json['score'] as num?)?.toInt() ?? 0,
       ratingBefore = (json['rating_before'] ?? json['rating'] ?? 1000) as int,
@@ -28,7 +29,7 @@ class BattlePlayerStats {
       basePoints,
       speedBonus;
   final double? accuracy;
-  final String? result;
+  final String? result, avatarUrl;
   int get ratingChange => (ratingAfter ?? ratingBefore) - ratingBefore;
 }
 

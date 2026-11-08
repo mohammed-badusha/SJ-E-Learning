@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -147,14 +148,21 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
     _notify();
   }
 
-  Future<void> completeProfile(String name, String phone) async {
+  Future<void> completeProfile(
+    String name,
+    String phone, {
+    String? portrait,
+    Uint8List? photo,
+  }) async {
     if (validateName(name) != null || validatePhone(phone) != null) {
       throw ArgumentError('Check your name and phone.');
     }
     await client!.rpc(
-      'complete_profile',
+      portrait == null ? 'complete_profile' : 'save_profile_portrait',
       params: {
         'full_name': name.trim(),
+        if (portrait != null) 'portrait': portrait,
+        if (photo != null) 'photo_png': base64Encode(photo),
         'phone': '+91${normalizePhone(phone)}',
       },
     );

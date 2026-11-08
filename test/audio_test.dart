@@ -5,6 +5,28 @@ import 'support/fake_audio.dart';
 
 void main() {
   test(
+    'Music stays ducked until every overlapping cue really finishes',
+    () async {
+      final backend = FakeAudioBackend()..autoCompleteCues = false;
+      final audio = AudioController(backend: backend, observeLifecycle: false);
+      addTearDown(audio.dispose);
+      audio.enterGame('battle');
+      await audio.idle;
+      audio.play(GameCue.finalRound);
+      audio.play(GameCue.select);
+      await audio.idle;
+      backend.finishCue();
+      await audio.idle;
+      expect(backend.calls.last, 'volume:${audio.musicLevel * .28}');
+      audio.setMusicVolume(.4);
+      await audio.idle;
+      expect(backend.calls.last, 'volume:${.4 * .28}');
+      backend.finishCue();
+      await audio.idle;
+      expect(backend.calls.last, 'volume:0.4');
+    },
+  );
+  test(
     'Music survives route handover, pauses in background, stops on exit',
     () async {
       final backend = FakeAudioBackend();
@@ -53,7 +75,8 @@ void main() {
       audio.play(GameCue.wrong);
       await audio.idle;
       expect(backend.calls, isNot(contains('cue:audio/wrong.mp3')));
-      expect(backend.calls.last, 'cues:stop');
+      expect(backend.calls, contains('cues:stop'));
+      expect(backend.calls.last, 'volume:${audio.musicLevel}');
       audio.setMusic(false);
       await audio.idle;
       expect(backend.calls.last, 'music:stop');

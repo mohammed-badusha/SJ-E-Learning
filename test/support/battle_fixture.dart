@@ -8,6 +8,7 @@ final battleFixture = <String, dynamic>{
   'players': [
     {
       'id': 'me',
+      'avatar_url': 'preset:curie',
       'full_name': 'Salman',
       'score': 35,
       'rating_before': 1096,

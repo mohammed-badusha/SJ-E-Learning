@@ -34,14 +34,25 @@ class ScoreChart extends StatelessWidget {
         SizedBox(
           height: 180,
           width: double.infinity,
-          child: CustomPaint(
-            painter: _ScorePainter(
-              yours,
-              opponent,
-              Theme.of(context).colorScheme.primary,
-              context.tokens.muted,
-              context.tokens.line,
-              MediaQuery.textScalerOf(context).scale(12),
+          child: TweenAnimationBuilder<double>(
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : ArenaTokens.normal,
+            tween: Tween(
+              begin: MediaQuery.disableAnimationsOf(context) ? 1.0 : 0.0,
+              end: 1,
+            ),
+            curve: ArenaTokens.ease,
+            builder: (context, progress, _) => CustomPaint(
+              painter: _ScorePainter(
+                yours,
+                opponent,
+                Theme.of(context).colorScheme.primary,
+                context.tokens.muted,
+                context.tokens.line,
+                MediaQuery.textScalerOf(context).scale(12),
+                progress,
+              ),
             ),
           ),
         ),
@@ -63,7 +74,25 @@ class _Legend extends StatelessWidget {
   Widget build(BuildContext context) => Row(
     mainAxisSize: MainAxisSize.min,
     children: [
-      Text(dashed ? '– –' : '━━', style: TextStyle(color: color)),
+      SizedBox(
+        width: 22,
+        child: Row(
+          children: [
+            Expanded(
+              child: ColoredBox(color: color, child: const SizedBox(height: 2)),
+            ),
+            if (dashed) ...[
+              const SizedBox(width: 4),
+              Expanded(
+                child: ColoredBox(
+                  color: color,
+                  child: const SizedBox(height: 2),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
       const SizedBox(width: 8),
       Flexible(child: Text(label, style: context.type.bodySmall)),
     ],
@@ -78,10 +107,11 @@ class _ScorePainter extends CustomPainter {
     this.muted,
     this.line,
     this.fontSize,
+    this.progress,
   );
   final List<int> you, other;
   final Color accent, muted, line;
-  final double fontSize;
+  final double fontSize, progress;
   @override
   void paint(Canvas canvas, Size size) {
     if (you.length < 2) return;
@@ -148,8 +178,18 @@ class _ScorePainter extends CustomPainter {
       }
     }
 
+    canvas.save();
+    canvas.clipRect(
+      Rect.fromLTRB(
+        left - 2,
+        top - 2,
+        left + (width + 2) * progress,
+        top + height + 2,
+      ),
+    );
     series(other, muted, true);
     series(you, accent, false);
+    canvas.restore();
     label('Start', Offset(left, top + height + 10));
     label('Q${you.length - 1}', Offset(left + width - 26, top + height + 10));
   }
@@ -161,5 +201,6 @@ class _ScorePainter extends CustomPainter {
       old.accent != accent ||
       old.muted != muted ||
       old.line != line ||
-      old.fontSize != fontSize;
+      old.fontSize != fontSize ||
+      old.progress != progress;
 }

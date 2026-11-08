@@ -102,3 +102,7 @@ Private Realtime channels are used for match events. Keep **Allow public access*
 ## 7. Before release
 
 Use separate projects/configs for staging and production. Review [BUILD_STATUS.md](BUILD_STATUS.md), replace sample questions, complete the outstanding features, configure real Android signing, and verify on two physical phones. Do not publish the debug build as a production release.
+
+## Player pictures (upgrading an existing project)
+
+If the project was installed through migration 009, run [the player portrait migration](../supabase/migrations/202611080010_player_portraits.sql) once in the SQL Editor. Fresh installations use the combined setup as usual. Gallery thumbnails are stored privately in Postgres and require no Storage bucket, anonymous policies or service key. No OAuth settings change.

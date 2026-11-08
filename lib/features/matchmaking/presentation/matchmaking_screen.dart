@@ -1,4 +1,8 @@
 import 'dart:async';
+import 'search_clock.dart';
+import '../../../shared/arena_panel.dart';
+import 'search_pulse.dart';
+import '../../../shared/player_avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -21,7 +25,7 @@ class MatchmakingScreen extends ConsumerStatefulWidget {
 class _MatchmakingState extends ConsumerState<MatchmakingScreen> {
   Timer? timer;
   RealtimeChannel? channel;
-  int remaining = 20;
+  final clock = SearchClock();
   String? error;
   bool cancelled = false, busy = false, navigated = false;
   late QuizRepository repo;
@@ -39,6 +43,7 @@ class _MatchmakingState extends ConsumerState<MatchmakingScreen> {
     navigated = true;
     audio.play(GameCue.matchFound, eventId: 'battle:$id:found');
     timer?.cancel();
+    clock.stop();
     context.replace('/battle/$id');
   }
 
@@ -59,6 +64,7 @@ class _MatchmakingState extends ConsumerState<MatchmakingScreen> {
           )
           .subscribe();
       await poll();
+      if (!mounted || cancelled || navigated) return;
       timer = Timer.periodic(const Duration(seconds: 2), (_) => poll());
     } catch (_) {
       if (mounted) {
@@ -82,14 +88,13 @@ class _MatchmakingState extends ConsumerState<MatchmakingScreen> {
         openMatch(result['match_id']);
         return;
       }
-      final elapsed = DateTime.parse(
-        result['server_now'],
-      ).difference(DateTime.parse(result['joined_at'])).inSeconds;
+      if (!mounted || cancelled || navigated) return;
+      if (error != null) setState(() => error = null);
+      final joined = DateTime.parse(result['joined_at']);
+      final server = DateTime.parse(result['server_now']);
       final timeout = result['search_timeout_seconds'] as int;
-      if (mounted) {
-        setState(() => remaining = (timeout - elapsed).clamp(0, timeout));
-      }
-      if (remaining <= 0) {
+      clock.sync(joined: joined, server: server, timeout: timeout);
+      if (!server.isBefore(joined.add(Duration(seconds: timeout)))) {
         final bot = await repo.rpc('start_bot_match');
         if (bot['match_id'] != null) openMatch(bot['match_id']);
       }
@@ -107,7 +112,9 @@ class _MatchmakingState extends ConsumerState<MatchmakingScreen> {
   }
 
   Future<void> cancel() async {
+    if (cancelled || navigated) return;
     cancelled = true;
+    clock.stop();
     timer?.cancel();
     if (!repo.session.preview) {
       try {
@@ -119,6 +126,7 @@ class _MatchmakingState extends ConsumerState<MatchmakingScreen> {
 
   @override
   void dispose() {
+    clock.dispose();
     audio.leaveGame(this);
     timer?.cancel();
     if (channel != null) repo.session.client!.removeChannel(channel!);
@@ -128,8 +136,11 @@ class _MatchmakingState extends ConsumerState<MatchmakingScreen> {
   @override
   Widget build(BuildContext context) => PopScope(
     canPop: false,
+    onPopInvokedWithResult: (popped, _) {
+      if (!popped) cancel();
+    },
     child: Scaffold(
-      appBar: AppBar(
+      appBar: ArenaBar(
         title: const Text('Finding your match'),
         actions: const [GameAudioButton()],
         leading: IconButton(
@@ -143,47 +154,136 @@ class _MatchmakingState extends ConsumerState<MatchmakingScreen> {
         child: ListView(
           padding: const EdgeInsets.all(28),
           children: [
-            const SizedBox(height: 48),
-            Center(
-              child: Container(
-                width: 200,
-                height: 200,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: ArenaTokens.violet.withValues(alpha: .15),
-                    width: 20,
+            ArenaPanel(
+              child: Column(
+                children: [
+                  Text(
+                    'Matchmaking',
+                    style: context.type.bodySmall?.copyWith(color: arenaMint),
                   ),
-                ),
-                child: Center(
-                  child: AvatarBadge(
-                    name: repo.session.profile!.fullName,
-                    size: 100,
+                  const SizedBox(height: 6),
+                  Text(
+                    'Finding your opponent',
+                    textAlign: TextAlign.center,
+                    style: context.type.headlineSmall?.copyWith(
+                      color: Colors.white,
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 30),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          children: [
+                            ArenaPortrait(
+                              accent: arenaLilac,
+                              child: PlayerAvatar(
+                                reference: repo.session.profile!.avatarUrl,
+                                name: repo.session.profile!.fullName,
+                                size: 62,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              repo.session.profile!.firstName,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              '${repo.session.profile!.tier} · You',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: arenaLilac),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.only(top: 22),
+                        child: Text(
+                          'VS',
+                          style: TextStyle(
+                            fontStyle: FontStyle.italic,
+                            fontWeight: FontWeight.w800,
+                            color: ArenaTokens.gold,
+                          ),
+                        ),
+                      ),
+                      const Expanded(
+                        child: Column(
+                          children: [
+                            SearchPulse(color: arenaMint),
+                            SizedBox(height: 10),
+                            Text(
+                              'Opponent',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              'Searching…',
+                              style: TextStyle(color: arenaMint),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                ],
               ),
-            ),
-            const SizedBox(height: 32),
-            Text(
-              repo.session.preview
-                  ? 'Find your opponent'
-                  : 'Searching for an opponent',
-              textAlign: TextAlign.center,
-              style: context.type.headlineMedium,
             ),
             const SizedBox(height: 16),
-            Text(
-              repo.session.preview
-                  ? 'Live matchmaking needs the Supabase schema and Google sign-in. Try a local practice round to explore the question experience.'
-                  : 'Searching for a learner at your level. If no one joins, a labelled practice opponent will take the challenge.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: context.tokens.muted),
-            ),
-            const SizedBox(height: 32),
-            if (!repo.session.preview)
-              Center(
-                child: TimerRing(remaining: remaining.toDouble(), total: 20),
+            ArenaCard(
+              child: ValueListenableBuilder<int?>(
+                valueListenable: clock,
+                builder: (context, value, _) {
+                  final status = repo.session.preview
+                      ? 'Practice preview'
+                      : value == null
+                      ? 'Joining the queue…'
+                      : value == 0
+                      ? 'Preparing your opponent…'
+                      : 'Searching for a live player';
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              status,
+                              style: context.type.titleMedium,
+                            ),
+                          ),
+                          if (value != null && value > 0)
+                            Text('${value}s', style: context.type.titleLarge),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      LinearProgressIndicator(
+                        value: value == null ? 0 : 1 - value / clock.total,
+                        minHeight: 6,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        repo.session.preview
+                            ? 'Try a sample round to practise answering.'
+                            : 'If no learner joins in time, you’ll play a practice opponent.',
+                        style: context.type.bodySmall,
+                      ),
+                    ],
+                  );
+                },
               ),
+            ),
             if (error != null) ...[
               const SizedBox(height: 20),
               Text(error!, textAlign: TextAlign.center),
@@ -202,12 +302,6 @@ class _MatchmakingState extends ConsumerState<MatchmakingScreen> {
             OutlinedButton(
               onPressed: cancel,
               child: const Text('Cancel search'),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Correct answers earn points; faster answers earn a bonus',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: context.tokens.muted, fontSize: 13),
             ),
           ],
         ),

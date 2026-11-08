@@ -1,119 +1,124 @@
 {
   "select": {
-    "status": "generated",
+    "status": "existing",
     "file": "select.mp3",
     "provider": "ElevenLabs",
-    "model": "eleven_text_to_sound_v2",
+    "model": "eleven_text_to_sound_v3",
     "duration_seconds": 0.5,
-    "sha256": "bfe0821d63367dd5b392968e270707426c14bf13c88cee1a8bbcf51403675403",
-    "generated_at_unix": 1794129296
+    "sha256": "04a8e3d62c36008859daaabbfc14c5822eae9e1fb48c26d5360d226bdf467b3f",
+    "generated_at_unix": 1794133177
   },
   "correct": {
-    "status": "generated",
+    "status": "existing",
     "file": "correct.mp3",
     "provider": "ElevenLabs",
-    "model": "eleven_text_to_sound_v2",
+    "model": "eleven_text_to_sound_v3",
     "duration_seconds": 0.8,
-    "sha256": "ffc8e981de811736d269744d7fb962799ee86502349b1546575e7ed20b67c1ca",
-    "generated_at_unix": 1794129296
+    "sha256": "e15befddcc6338150334f05877ff092c315a0ece89cf8df62687d54bd54e03c8",
+    "generated_at_unix": 1794133177
   },
   "tick": {
     "status": "generated",
     "file": "tick.mp3",
     "provider": "ElevenLabs",
-    "model": "eleven_text_to_sound_v2",
+    "model": "eleven_text_to_sound_v3",
     "duration_seconds": 0.5,
-    "sha256": "f7f923c385ccc5c48ae6d7485da9960dad12b3619a8afe6e54b0ed66e35e1959",
-    "generated_at_unix": 1794129298
+    "sha256": "9d08df0b6449b90cad6b5c0d7e8cfaef3548488952998a322f2a0098a315f8f1",
+    "generated_at_unix": 1794133202
   },
   "wrong": {
     "status": "generated",
     "file": "wrong.mp3",
     "provider": "ElevenLabs",
-    "model": "eleven_text_to_sound_v2",
-    "duration_seconds": 0.65,
-    "sha256": "07dedc6fe278b78c8f26b431185859fb85933f57a464177d59c3e042a2890dda",
-    "generated_at_unix": 1794129298
+    "model": "eleven_text_to_sound_v3",
+    "duration_seconds": 1.28,
+    "sha256": "72aa828e199e673cd8d755771b546625c06221db31b01d191f8e593d6b087bb3",
+    "generated_at_unix": 1794133955,
+    "requested_duration_seconds": 1.2
   },
   "match_found": {
-    "status": "generated",
+    "status": "existing",
     "file": "match_found.mp3",
     "provider": "ElevenLabs",
-    "model": "eleven_text_to_sound_v2",
+    "model": "eleven_text_to_sound_v3",
     "duration_seconds": 1.2,
-    "sha256": "1484dee78cbeec0a3edb152092360c4a7072dc6dfc7f8e76a043c785c473e894",
-    "generated_at_unix": 1794129300
+    "sha256": "20dc85124dddfde8cbcf6154e7f23ada9057856b82918d99aea94418a324548c",
+    "generated_at_unix": 1794133179
   },
   "question_start": {
-    "status": "generated",
+    "status": "existing",
     "file": "question_start.mp3",
     "provider": "ElevenLabs",
-    "model": "eleven_text_to_sound_v2",
+    "model": "eleven_text_to_sound_v3",
     "duration_seconds": 0.5,
-    "sha256": "4459af79dead80a090cd4371f2155fe133447bfc2a81ea8d92b5aefb56bb52b7",
-    "generated_at_unix": 1794129300
+    "sha256": "a97207437d7b230b41318ba6f440f2712e4eaba060e9123f5e6ca7f682156886",
+    "generated_at_unix": 1794133181
   },
   "final_round": {
     "status": "generated",
     "file": "final_round.mp3",
     "provider": "ElevenLabs",
-    "model": "eleven_text_to_sound_v2",
-    "duration_seconds": 1.1,
-    "sha256": "3c6a2dc5d1193d7d6926e3a859d5db0c475fb58fec1a71ba9e3321fa3936d5b7",
-    "generated_at_unix": 1794129302
+    "model": "eleven_text_to_sound_v3",
+    "duration_seconds": 1.68,
+    "sha256": "89f5607f2fe5494f1a86ebd7c7afcd50346efb368c0cdc5c8a5d1c453d530c0f",
+    "generated_at_unix": 1794133955,
+    "requested_duration_seconds": 1.6
   },
   "win": {
-    "status": "generated",
+    "status": "existing",
     "file": "win.mp3",
     "provider": "ElevenLabs",
-    "model": "eleven_text_to_sound_v2",
+    "model": "eleven_text_to_sound_v3",
     "duration_seconds": 2.0,
-    "sha256": "b15db8590792ed9993db5dcee43e6b736e7924c28b3cc1ac3566680b8bbe10a6",
-    "generated_at_unix": 1794129302
+    "sha256": "67155c91dc4b589378c9ef6d5882a28170fd5c392c7d2ef5645316bb47a8e446",
+    "generated_at_unix": 1794133182
   },
   "loss": {
-    "status": "generated",
+    "status": "existing",
     "file": "loss.mp3",
     "provider": "ElevenLabs",
-    "model": "eleven_text_to_sound_v2",
-    "duration_seconds": 1.1,
-    "sha256": "d86645fb90ac258b44a36afc149b9cd2cfd9175d278bb68bc7dbe36f76bb7e3a",
-    "generated_at_unix": 1794129304
+    "model": "eleven_text_to_sound_v3",
+    "duration_seconds": 1.16,
+    "sha256": "c8793b07ea2352da2327ae69b68a7c6c03b321f4d2e09b8e07d3edf3994a2aea",
+    "generated_at_unix": 1794133182,
+    "mastering": "natural-tail-fade-and-80ms-padding",
+    "mastered_at_unix": 1794133987
   },
   "draw": {
-    "status": "generated",
+    "status": "existing",
     "file": "draw.mp3",
     "provider": "ElevenLabs",
-    "model": "eleven_text_to_sound_v2",
+    "model": "eleven_text_to_sound_v3",
     "duration_seconds": 1.1,
-    "sha256": "1a583f87afeb53dfd8e50f2bf469fb8c9c4c727a07fd94a8b7476faa7aff8333",
-    "generated_at_unix": 1794129304
+    "sha256": "1da581a9ed143b432fba41fedbd33da8b6f12aa48142c7104bf2b7d38080aa56",
+    "generated_at_unix": 1794133184
   },
   "level_up": {
-    "status": "generated",
+    "status": "existing",
     "file": "level_up.mp3",
     "provider": "ElevenLabs",
-    "model": "eleven_text_to_sound_v2",
+    "model": "eleven_text_to_sound_v3",
     "duration_seconds": 1.4,
-    "sha256": "0c4f914ca6a81047283638ab9b4297783e469b2fbf912ad4fb30c939ec7c40f1",
-    "generated_at_unix": 1794129306
+    "sha256": "2e413db29018db55cae7d54516c0448aa218764883143184ecc43eb12a872ea3",
+    "generated_at_unix": 1794133184
   },
   "timeout": {
     "status": "generated",
     "file": "timeout.mp3",
     "provider": "ElevenLabs",
-    "model": "eleven_text_to_sound_v2",
-    "duration_seconds": 0.7,
-    "sha256": "4d4c6028a16cd0e58f3e83eb4e5b845cf03ade606203838d606bd8ad064fd9d2",
-    "generated_at_unix": 1794129307
+    "model": "eleven_text_to_sound_v3",
+    "duration_seconds": 1.28,
+    "sha256": "4f34960912f0cde785643f12707bede42973eb78b1e25d85f286a89ab3f248e5",
+    "generated_at_unix": 1794133957,
+    "requested_duration_seconds": 1.2
   },
   "music": {
     "status": "generated",
     "file": "music.mp3",
     "provider": "ElevenLabs",
-    "model": "music_v1",
+    "model": "music_v2_5",
     "duration_seconds": 30,
-    "sha256": "d246cedfde282c00fd7c2fe256c5d2762013b80e57a056259d91706ba04b48d1",
-    "generated_at_unix": 1794129312
+    "sha256": "3fa5244e378cc9a266708a80a14c83dfdb73c84642deed5ecdf75f7a21a7dc4c",
+    "generated_at_unix": 1794133190
   }
 }

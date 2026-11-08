@@ -32,7 +32,9 @@ class _QuizState extends ConsumerState<QuizScreen> {
   int index = 0, count = 5, score = 0, correct = 0;
   double remaining = 15;
   DateTime? deadline;
-  Timer? timer;
+  Timer? timer, autoAdvance;
+  bool advancing = false;
+  final questionScroll = ScrollController();
   bool loading = true, submitting = false, finished = false;
   final List<Map<String, dynamic>> review = [];
   late QuizRepository repository;
@@ -76,6 +78,7 @@ class _QuizState extends ConsumerState<QuizScreen> {
           finished = true;
           audio.leaveGame(this);
         } else {
+          if (!mounted) return;
           showQuestion(Map<String, dynamic>.from(data['question']));
         }
       }
@@ -87,6 +90,7 @@ class _QuizState extends ConsumerState<QuizScreen> {
   }
 
   void showQuestion(Map<String, dynamic> value) {
+    if (questionScroll.hasClients) questionScroll.jumpTo(0);
     question = value;
     audio.play(
       index == count - 1 ? GameCue.finalRound : GameCue.questionStart,
@@ -107,12 +111,16 @@ class _QuizState extends ConsumerState<QuizScreen> {
             submitting) {
           return;
         }
-        setState(
-          () => remaining =
-              (deadline!.difference(DateTime.now()).inMilliseconds / 1000)
-                  .clamp(0, 120),
-        );
-        final seconds = remaining.ceil();
+        final left =
+            (deadline!.difference(DateTime.now()).inMilliseconds / 1000)
+                .clamp(0, 120)
+                .toDouble();
+        final seconds = left.ceil();
+        if (seconds != remaining.ceil()) {
+          setState(() => remaining = left);
+        } else {
+          remaining = left;
+        }
         if (result == null && seconds > 0 && seconds <= 3) {
           audio.play(
             GameCue.tick,
@@ -120,7 +128,7 @@ class _QuizState extends ConsumerState<QuizScreen> {
                 'quiz:${attempt ?? identityHashCode(this)}:$index:tick:$seconds',
           );
         }
-        if (remaining <= 0 && result == null) answer(null);
+        if (remaining <= 0 && result == null && error == null) answer(null);
       });
     }
   }
@@ -161,7 +169,7 @@ class _QuizState extends ConsumerState<QuizScreen> {
         );
       }
       if (!mounted) return;
-      if (widget.mode != 'daily') timer?.cancel();
+      timer?.cancel();
       result = response;
       audio.play(
         option == null
@@ -175,11 +183,14 @@ class _QuizState extends ConsumerState<QuizScreen> {
       if (response['is_correct'] == true) correct++;
       review.add({...question!, ...response, 'selected_option_id': option});
       setState(() => submitting = false);
+      if (widget.mode == 'daily') {
+        autoAdvance = Timer(const Duration(milliseconds: 350), next);
+      }
     } catch (_) {
       if (mounted) {
         setState(() {
           submitting = false;
-          selected = null;
+          selected = option;
           error =
               'Answer not confirmed. Retry to safely recover the first submission.';
         });
@@ -188,6 +199,16 @@ class _QuizState extends ConsumerState<QuizScreen> {
   }
 
   Future<void> next() async {
+    if (!mounted || advancing) return;
+    advancing = true;
+    try {
+      await advance();
+    } finally {
+      advancing = false;
+    }
+  }
+
+  Future<void> advance() async {
     if (index == count - 1) {
       if (!repository.session.preview) {
         try {
@@ -195,6 +216,7 @@ class _QuizState extends ConsumerState<QuizScreen> {
             widget.mode == 'daily' ? 'finish_daily_attempt' : 'finish_practice',
             {'attempt_id': attempt},
           );
+          if (!mounted) return;
           score = data['score'];
           correct = data['correct_count'];
         } catch (_) {
@@ -230,7 +252,7 @@ class _QuizState extends ConsumerState<QuizScreen> {
       return;
     }
     setState(() {
-      loading = true;
+      loading = widget.mode != 'daily';
       error = null;
     });
     try {
@@ -243,6 +265,7 @@ class _QuizState extends ConsumerState<QuizScreen> {
                   : 'get_practice_question',
               {'attempt_id': attempt, 'question_index': newIndex},
             );
+      if (!mounted) return;
       index = newIndex;
       showQuestion(data);
     } catch (_) {
@@ -254,6 +277,8 @@ class _QuizState extends ConsumerState<QuizScreen> {
   @override
   void dispose() {
     timer?.cancel();
+    autoAdvance?.cancel();
+    questionScroll.dispose();
     audio.leaveGame(this);
     super.dispose();
   }
@@ -262,7 +287,11 @@ class _QuizState extends ConsumerState<QuizScreen> {
   Widget build(BuildContext context) {
     if (finished) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Practice results')),
+        appBar: ArenaBar(
+          title: Text(
+            widget.mode == 'daily' ? 'Daily results' : 'Practice results',
+          ),
+        ),
         body: PageBody(
           maxWidth: 600,
           child: ListView(
@@ -339,20 +368,21 @@ class _QuizState extends ConsumerState<QuizScreen> {
     return PopScope(
       canPop: widget.mode == 'practice',
       child: Scaffold(
-        appBar: AppBar(
+        appBar: ArenaBar(
           title: Text(
             widget.mode == 'daily' ? 'Daily Challenge' : 'Practice round',
           ),
           actions: [
             const GameAudioButton(),
             TextButton(
+              style: TextButton.styleFrom(foregroundColor: Colors.white),
               onPressed: () => context.go('/'),
               child: const Text('Leave'),
             ),
           ],
         ),
         body: loading
-            ? const SkeletonList()
+            ? const SkeletonList(layout: SkeletonLayout.quiz)
             : question == null
             ? EmptyState(
                 title: 'Let’s try that again',
@@ -365,6 +395,7 @@ class _QuizState extends ConsumerState<QuizScreen> {
             : PageBody(
                 maxWidth: 700,
                 child: ListView(
+                  controller: questionScroll,
                   padding: const EdgeInsets.all(24),
                   children: [
                     Row(
@@ -433,7 +464,7 @@ class _QuizState extends ConsumerState<QuizScreen> {
                                 : OptionState.disabled)
                           : selected == id
                           ? OptionState.selected
-                          : submitting
+                          : submitting || error != null
                           ? OptionState.disabled
                           : OptionState.idle;
                       return Padding(
@@ -454,7 +485,9 @@ class _QuizState extends ConsumerState<QuizScreen> {
                         ),
                       ),
                       TextButton(
-                        onPressed: () => answer(selected),
+                        onPressed: result != null
+                            ? next
+                            : () => answer(selected),
                         child: const Text('Retry'),
                       ),
                     ],
@@ -489,17 +522,13 @@ class _QuizState extends ConsumerState<QuizScreen> {
                         ),
                       ),
                       const SizedBox(height: 24),
-                      PrimaryButton(
-                        label: index == count - 1
-                            ? 'See my results'
-                            : 'Next question',
-                        onPressed:
-                            widget.mode == 'daily' &&
-                                index < count - 1 &&
-                                remaining > 0
-                            ? null
-                            : next,
-                      ),
+                      if (widget.mode != 'daily')
+                        PrimaryButton(
+                          label: index == count - 1
+                              ? 'See my results'
+                              : 'Next question',
+                          onPressed: next,
+                        ),
                     ],
                     const SizedBox(height: 24),
                   ],
