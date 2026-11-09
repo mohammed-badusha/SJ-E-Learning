@@ -108,7 +108,7 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(find.text('Your practice'), findsOneWidget);
+        expect(find.text('1v1 Battle'), findsOneWidget);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
         router.dispose();

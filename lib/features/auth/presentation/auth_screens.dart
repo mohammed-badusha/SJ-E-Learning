@@ -47,153 +47,266 @@ class _LoginState extends ConsumerState<LoginScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => AnnotatedRegion<SystemUiOverlayStyle>(
-    value: SystemUiOverlayStyle.light,
-    child: Scaffold(
-      backgroundColor: context.tokens.card,
-      body: SingleChildScrollView(
-        child: Column(
+  Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+      child: Scaffold(
+        backgroundColor: isDark ? const Color(0xFF10192B) : Colors.white,
+        body: Stack(
           children: [
-            Container(
-              width: double.infinity,
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xff3329a5),
-                    Color(0xff5d49d6),
-                    Color(0xff8777e4),
-                  ],
-                ),
-              ),
-              child: SafeArea(
-                bottom: false,
-                child: Column(
-                  children: [
-                    SizedBox(
-                      height: (MediaQuery.sizeOf(context).height * .075).clamp(
-                        20,
-                        76,
-                      ),
+            // Background image — transparent, clipped to hide red corners
+            Positioned.fill(
+              child: ClipRect(
+                child: OverflowBox(
+                  alignment: Alignment.center,
+                  maxWidth: MediaQuery.sizeOf(context).width * 1.15,
+                  maxHeight: screenHeight * 1.15,
+                  child: Opacity(
+                    opacity: isDark ? 0.18 : 0.22,
+                    child: Image.asset(
+                      'assets/images/image.png',
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                     ),
-                    Container(
-                      padding: const EdgeInsets.all(5),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: const SJMark(size: 44),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'SJ E-Learning',
-                      style: context.type.headlineMedium?.copyWith(
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Competitive exam practice',
-                      style: TextStyle(color: Colors.white, fontSize: 14),
-                    ),
-                    SizedBox(
-                      height: (MediaQuery.sizeOf(context).height * .07).clamp(
-                        20,
-                        64,
-                      ),
-                    ),
-                    Container(
-                      height: 16,
-                      margin: const EdgeInsets.symmetric(horizontal: 28),
-                      decoration: const BoxDecoration(
-                        color: Color(0x44ffffff),
-                        borderRadius: BorderRadius.vertical(
-                          top: Radius.circular(28),
-                        ),
-                      ),
-                    ),
-                    Container(
-                      height: 28,
-                      decoration: BoxDecoration(
-                        color: context.tokens.card,
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(32),
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
+
+            // Main content
             SafeArea(
-              top: false,
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 440),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(28, 12, 28, 36),
-                    child: Arrive(
+              child: SingleChildScrollView(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 440),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 28),
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          SizedBox(height: screenHeight * 0.08),
+
+                          // SJ Logo — kept unchanged
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? Colors.white.withValues(alpha: 0.1)
+                                  : const Color(0xFFF5F7FB),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: isDark
+                                    ? Colors.white.withValues(alpha: 0.08)
+                                    : const Color(0xFFE2E7F0),
+                              ),
+                            ),
+                            child: const SJMark(size: 48),
+                          ),
+                          const SizedBox(height: 16),
+
+                          // App name — kept unchanged
                           Text(
-                            'Welcome to the arena',
-                            style: context.type.headlineMedium,
+                            'SJ E-Learning',
+                            style: context.type.headlineMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 40),
+
+                          // Tagline label
+                          Text(
+                            'YOUR SUCCESS STARTS HERE',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 2.5,
+                              color: context.tokens.muted,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+
+                          // Headline
+                          Arrive(
+                            child: Text(
+                              'Prepare. Practice.\nSucceed.',
+                              textAlign: TextAlign.center,
+                              style: context.type.headlineLarge?.copyWith(
+                                fontSize: 30,
+                                fontWeight: FontWeight.w700,
+                                height: 1.2,
+                                color: isDark
+                                    ? Colors.white
+                                    : const Color(0xFF1A237E),
+                              ),
+                            ),
                           ),
                           const SizedBox(height: 12),
+
+                          // Subtitle
                           Text(
-                            'Practise a subject, challenge a rival, or see how far you’ve come.',
-                            style: context.type.bodyLarge?.copyWith(
+                            'Your SSC GD preparation journey\nstarts with one step.',
+                            textAlign: TextAlign.center,
+                            style: context.type.bodyMedium?.copyWith(
                               color: context.tokens.secondary,
+                              height: 1.5,
                             ),
                           ),
-                          const SizedBox(height: 28),
+                          const SizedBox(height: 36),
+
+                          // Google Sign In Button
                           SizedBox(
                             width: double.infinity,
-                            child: OutlinedButton.icon(
+                            child: OutlinedButton(
                               style: OutlinedButton.styleFrom(
-                                backgroundColor: Colors.white,
-                                foregroundColor: const Color(0xff1f1f1f),
-                                side: const BorderSide(
-                                  color: Color(0xff747775),
+                                backgroundColor: isDark
+                                    ? const Color(0xFF23324C)
+                                    : Colors.white,
+                                foregroundColor: isDark
+                                    ? Colors.white
+                                    : const Color(0xFF1f1f1f),
+                                side: BorderSide(
+                                  color: isDark
+                                      ? const Color(0xFF354664)
+                                      : const Color(0xFFE0E0E0),
                                 ),
                                 shape: const StadiumBorder(),
+                                minimumSize: const Size(48, 54),
+                                elevation: 0,
                               ),
                               onPressed: busy ? null : signIn,
-                              icon: Image.asset(
-                                'assets/brand/google-g.png',
-                                width: 20,
-                                height: 20,
-                                excludeFromSemantics: true,
-                              ),
-                              label: Text(
-                                busy ? 'Signing in…' : 'Continue with Google',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w500,
-                                  fontSize: 15,
-                                ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Image.asset(
+                                    'assets/brand/google-g.png',
+                                    width: 20,
+                                    height: 20,
+                                    excludeFromSemantics: true,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Text(
+                                    busy
+                                        ? 'Signing in\u2026'
+                                        : 'Continue with Google',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),
+                          const SizedBox(height: 14),
+
+                          // Helper text
+                          Text(
+                            'Secure and quick sign-in with your Google account',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: context.tokens.muted,
+                            ),
+                          ),
+
+                          // Error message
                           if (error != null)
                             Padding(
-                              padding: const EdgeInsets.only(top: 12),
+                              padding: const EdgeInsets.only(top: 16),
                               child: Semantics(
                                 liveRegion: true,
-                                child: Text(
-                                  error!,
-                                  style: TextStyle(
-                                    color: Theme.of(context).colorScheme.error,
+                                child: Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .error
+                                        .withValues(alpha: 0.08),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .error
+                                          .withValues(alpha: 0.2),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    error!,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color:
+                                          Theme.of(context).colorScheme.error,
+                                      fontSize: 13,
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                          const SizedBox(height: 18),
-                          Text(
-                            'New here? Your first sign-in creates your player profile.',
-                            style: context.type.bodySmall,
+
+                          SizedBox(height: screenHeight * 0.06),
+
+                          // Divider line
+                          Divider(color: context.tokens.line),
+                          const SizedBox(height: 16),
+
+                          // Trust badges
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.verified_user_outlined,
+                                size: 15,
+                                color: context.tokens.muted,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Secure Login',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: context.tokens.muted,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                '\u00b7',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: context.tokens.muted,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Icon(
+                                Icons.bolt_outlined,
+                                size: 15,
+                                color: context.tokens.muted,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Quick Access',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: context.tokens.muted,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
                           ),
+                          const SizedBox(height: 20),
+
+                          // Footer
+                          Text(
+                            'By continuing, you agree to our Terms & Privacy Policy.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: context.tokens.muted,
+                            ),
+                          ),
+                          const SizedBox(height: 32),
                         ],
                       ),
                     ),
@@ -204,8 +317,8 @@ class _LoginState extends ConsumerState<LoginScreen> {
           ],
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class CompleteProfileScreen extends ConsumerStatefulWidget {
@@ -269,7 +382,7 @@ class _CompleteProfileState extends ConsumerState<CompleteProfileScreen> {
         setState(
           () => error = e.toString().contains('PHONE_IN_USE')
               ? 'That phone number is already linked to another account.'
-              : 'We couldn’t save your profile. Check your connection and retry.',
+              : 'We couldn\u2019t save your profile. Check your connection and retry.',
         );
       }
     } finally {
@@ -306,7 +419,7 @@ class _CompleteProfileState extends ConsumerState<CompleteProfileScreen> {
                 Text(
                   widget.editing
                       ? 'Update your picture, name or mobile number.'
-                      : 'Choose how you’ll appear in the arena.',
+                      : 'Choose how you\u2019ll appear in the arena.',
                   style: TextStyle(color: context.tokens.muted, fontSize: 16),
                 ),
                 const SizedBox(height: 32),
@@ -350,7 +463,7 @@ class _CompleteProfileState extends ConsumerState<CompleteProfileScreen> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'The academy uses this number to contact you. Phone numbers aren’t OTP-verified.',
+                  'The academy uses this number to contact you. Phone numbers aren\u2019t OTP-verified.',
                   style: TextStyle(color: context.tokens.muted, fontSize: 12),
                 ),
                 if (session.error != null) ...[

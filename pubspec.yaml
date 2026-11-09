@@ -34,7 +34,7 @@ dev_dependencies:
   riverpod_generator: ^3.0.3
   freezed: ^3.2.3
   json_serializable: ^6.11.1
-  go_router_builder: ^3.0.1
+  go_router_builder: ^4.5.0
 
 flutter:
   uses-material-design: true
@@ -43,6 +43,7 @@ flutter:
     - assets/brand/google-g.png
     - assets/arena/
     - assets/avatars/
+    - assets/images/
     - assets/audio/
     - assets/fonts/Poppins-OFL.txt
     - assets/fonts/Inter-OFL.txt
