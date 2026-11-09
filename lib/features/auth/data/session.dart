@@ -2,8 +2,6 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/env.dart';
@@ -22,18 +20,7 @@ SessionController session(Ref ref) {
 class SessionController extends ChangeNotifier with WidgetsBindingObserver {
   SessionController(this.client) {
     WidgetsBinding.instance.addObserver(this);
-    if (Hive.isBoxOpen('preferences')) {
-      final prefs = Hive.box<dynamic>('preferences');
-      if (prefs.get('light_design_v1', defaultValue: false) != true) {
-        prefs.put('theme', ThemeMode.light.index);
-        prefs.put('light_design_v1', true);
-      }
-      final index =
-          (prefs.get('theme', defaultValue: ThemeMode.light.index) as int)
-              .clamp(0, 2);
-      themeMode = ThemeMode.values[index];
-      haptics = prefs.get('haptics', defaultValue: true) as bool;
-    }
+
     _subscription = client?.auth.onAuthStateChange.listen(
       (_) => unawaited(refresh()),
     );
@@ -41,13 +28,71 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
   }
   final SupabaseClient? client;
   StreamSubscription<AuthState>? _subscription;
+  final dataChanges = ValueNotifier<int>(0);
+  Map<String, dynamic> preferences = {};
+  final List<RealtimeChannel> _dataChannels = [];
+  String? _subscribedUser;
+  Timer? _dataDebounce;
+  bool _refreshing = false;
+  Future<void> savePreferences(Map<String, dynamic> patch) async {
+    if (preview || client?.auth.currentUser == null) return;
+    try {
+      preferences = Map<String, dynamic>.from(
+        await client!.rpc('save_preferences', params: {'patch': patch}),
+      );
+      error = null;
+    } catch (_) {
+      error = 'Settings could not be saved. Reconnect and try again.';
+    }
+    _notify();
+  }
+
+  void _subscribeData() {
+    final uid = client?.auth.currentUser?.id;
+    if ('$uid:${role.name}' == _subscribedUser) return;
+    for (final channel in _dataChannels) {
+      unawaited(client!.removeChannel(channel));
+    }
+    _dataChannels.clear();
+    _subscribedUser = '$uid:${role.name}';
+    if (uid == null) preferences = {};
+    if (uid == null) return;
+    for (final topic in [
+      'data:catalog',
+      'data:user:$uid',
+      if (role.isAdmin) 'data:admin',
+    ]) {
+      final channel = client!.channel(
+        topic,
+        opts: const RealtimeChannelConfig(private: true),
+      );
+      void changed(Map<String, dynamic> _) {
+        _dataDebounce?.cancel();
+        _dataDebounce = Timer(const Duration(milliseconds: 250), () {
+          if (_disposed) return;
+          dataChanges.value++;
+          if (topic.startsWith('data:user:')) unawaited(refresh());
+        });
+      }
+
+      channel
+          .onBroadcast(event: 'changed', callback: changed)
+          .onBroadcast(event: 'standings', callback: changed)
+          .subscribe((status, error) {
+            if (status == RealtimeSubscribeStatus.subscribed && !_disposed) {
+              dataChanges.value++;
+            }
+          });
+      _dataChannels.add(channel);
+    }
+  }
+
   Profile? profile;
   AdminRole role = AdminRole.student;
   bool preview = false;
   bool loading = true;
   String? error;
   bool _disposed = false;
-  bool _googleInitialized = false;
   bool get signedIn => preview || client?.auth.currentSession != null;
   bool get completed =>
       profile?.profileCompleted == true && profile?.isBanned != true;
@@ -59,7 +104,8 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> refresh() async {
-    if (preview) return;
+    if (preview || _refreshing) return;
+    _subscribeData();
     if (client?.auth.currentSession == null) {
       profile = null;
       role = AdminRole.student;
@@ -67,7 +113,17 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
       _notify();
       return;
     }
+    _refreshing = true;
     try {
+      final pref = await client!
+          .from('user_preferences')
+          .select('settings')
+          .eq('user_id', client!.auth.currentUser!.id)
+          .maybeSingle();
+      preferences = Map<String, dynamic>.from(pref?['settings'] ?? {});
+      themeMode =
+          ThemeMode.values[(preferences['theme'] as int? ?? 1).clamp(0, 2)];
+      haptics = preferences['haptics'] as bool? ?? true;
       final data = await client!
           .from('profiles')
           .select(
@@ -78,6 +134,7 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
       final nextRole = await client!.rpc('get_my_role');
       profile = data == null ? null : Profile.fromJson(data);
       role = AdminRole.parse(nextRole as String);
+      _subscribeData();
       error = profile?.isBanned == true
           ? 'This account is suspended. Please contact the academy.'
           : null;
@@ -87,6 +144,7 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
       profile = null;
       error = 'We couldn’t load your profile. Check your connection and retry.';
     } finally {
+      _refreshing = false;
       loading = false;
       _notify();
     }
@@ -105,28 +163,11 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
       );
       return;
     }
-    if (Env.googleWebClientId.isEmpty) {
-      throw StateError('Google OAuth client ID hasn’t been configured yet.');
-    }
-    if (!_googleInitialized) {
-      await GoogleSignIn.instance.initialize(
-        clientId: Env.googleIosClientId.isEmpty ? null : Env.googleIosClientId,
-        serverClientId: Env.googleWebClientId,
-      );
-      _googleInitialized = true;
-    }
-    final account = await GoogleSignIn.instance.authenticate();
-    final idToken = account.authentication.idToken;
-    if (idToken == null) {
-      throw StateError(
-        'Google did not return an ID token. Check OAuth configuration.',
-      );
-    }
-    await client!.auth.signInWithIdToken(
-      provider: OAuthProvider.google,
-      idToken: idToken,
+    await client!.auth.signInWithOAuth(
+      OAuthProvider.google,
+      redirectTo: Env.redirectUrl,
+      authScreenLaunchMode: LaunchMode.externalApplication,
     );
-    await refresh();
   }
 
   void enterPreview() {
@@ -174,17 +215,15 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
 
   void setTheme(ThemeMode value) {
     themeMode = value;
-    if (Hive.isBoxOpen('preferences')) {
-      Hive.box<dynamic>('preferences').put('theme', value.index);
-    }
+    unawaited(savePreferences({'theme': value.index}));
+
     _notify();
   }
 
   void setHaptics(bool value) {
     haptics = value;
-    if (Hive.isBoxOpen('preferences')) {
-      Hive.box<dynamic>('preferences').put('haptics', value);
-    }
+    unawaited(savePreferences({'haptics': value}));
+
     _notify();
   }
 
@@ -194,7 +233,7 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
     profile = null;
     role = AdminRole.student;
     error = null;
-    if (Hive.isBoxOpen('review')) await Hive.box<dynamic>('review').clear();
+
     _notify();
   }
 
@@ -207,6 +246,11 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
   void dispose() {
     _disposed = true;
     _subscription?.cancel();
+    _dataDebounce?.cancel();
+    for (final channel in _dataChannels) {
+      unawaited(client!.removeChannel(channel));
+    }
+    dataChanges.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

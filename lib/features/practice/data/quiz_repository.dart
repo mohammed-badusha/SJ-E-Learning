@@ -72,7 +72,7 @@ class QuizRepository {
     if (session.preview) return previewCategories;
     final rows = await session.client!
         .from('categories')
-        .select()
+        .select('id,name,slug,color_hex,icon')
         .eq('is_active', true)
         .order('sort_order');
     return rows.map(QuizCategory.fromJson).toList();
@@ -86,7 +86,7 @@ class QuizRepository {
     }
     return session.client!
         .from('subtopics')
-        .select('id,name')
+        .select('id,name,topic_group')
         .eq('category_id', id)
         .eq('is_active', true)
         .order('sort_order');

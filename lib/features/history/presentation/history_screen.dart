@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:hive_ce_flutter/hive_flutter.dart';
-import '../../../core/theme.dart';
 import '../../../shared/widgets.dart';
 import '../../auth/data/session.dart';
 import '../../practice/data/quiz_repository.dart';
@@ -15,154 +13,152 @@ class HistoryScreen extends ConsumerStatefulWidget {
 }
 
 class _HistoryState extends ConsumerState<HistoryScreen> {
-  late Future<Map<String, dynamic>> future;
+  final rows = <Map<String, dynamic>>[];
+  bool loading = false, more = true;
+  int generation = 0;
+  String? error;
+  late final SessionController session;
   @override
   void initState() {
     super.initState();
-    load();
+    session = ref.read(sessionProvider);
+    session.dataChanges.addListener(changed);
+    load(reset: true);
   }
 
-  void load() {
-    final session = ref.read(sessionProvider);
-    future = session.preview
-        ? Future.value({'matches': []})
-        : QuizRepository(session).rpc('get_my_history');
+  void changed() {
+    if (mounted) load(reset: true);
   }
 
   @override
-  Widget build(BuildContext context) {
-    final session = ref.watch(sessionProvider);
-    final cached = Hive.isBoxOpen('review')
-        ? Hive.box('review')
-              .toMap()
-              .entries
-              .where(
-                (e) => e.key.toString().startsWith('${session.profile!.id}:'),
-              )
-              .map((e) => Map<String, dynamic>.from(e.value))
-              .toList()
-              .reversed
-              .toList()
-        : <Map<String, dynamic>>[];
-    return Scaffold(
-      appBar: ArenaBar(title: const Text('Match history')),
-      body: PageBody(
-        maxWidth: 800,
-        child: FutureBuilder(
-          future: future,
-          builder: (context, snapshot) {
-            final matches = snapshot.data?['matches'] as List? ?? [];
-            if (!snapshot.hasData && cached.isEmpty) {
-              if (snapshot.hasError) {
-                return EmptyState(
-                  title: 'History couldn’t load',
-                  message: 'Please reconnect and retry.',
-                  action: OutlinedButton(
-                    onPressed: () => setState(load),
-                    child: const Text('Retry'),
-                  ),
-                );
-              }
-              return const SkeletonList();
-            }
-            if (matches.isEmpty && cached.isEmpty) {
-              return EmptyState(
-                title: 'Your story starts with a round',
-                message:
-                    'Your completed battles and saved practice reviews will appear here.',
-                action: OutlinedButton(
-                  onPressed: () => context.push('/categories?mode=practice'),
-                  child: const Text('Try a practice round'),
-                ),
-              );
-            }
-            return ListView(
+  void dispose() {
+    session.dataChanges.removeListener(changed);
+    super.dispose();
+  }
+
+  Future<void> load({bool reset = false}) async {
+    if (!reset && (loading || !more)) return;
+    final request = ++generation;
+    final cursor = reset || rows.isEmpty ? null : rows.last;
+    setState(() {
+      loading = true;
+      error = null;
+    });
+    try {
+      final data = session.preview
+          ? {'rows': []}
+          : await QuizRepository(session).rpc('get_history_page', {
+              'before_at': cursor?['played_at'],
+              'before_id': cursor?['id'],
+            });
+      if (!mounted || request != generation) return;
+      final page = (data['rows'] as List).cast<Map<String, dynamic>>();
+      setState(() {
+        if (reset) rows.clear();
+        rows.addAll(page);
+        more = page.length == 30;
+      });
+    } catch (_) {
+      if (mounted && request == generation) {
+        setState(() => error = 'History couldn’t load. Reconnect and retry.');
+      }
+    } finally {
+      if (mounted && request == generation) setState(() => loading = false);
+    }
+  }
+
+  Future<void> review(Map<String, dynamic> row) async {
+    try {
+      final battle = row['mode'] == 'battle';
+      final data = await QuizRepository(session).rpc(
+        battle
+            ? 'get_match_review'
+            : row['mode'] == 'daily'
+            ? 'get_daily_review'
+            : 'get_practice_review',
+        {battle ? 'match_id' : 'attempt_id': row['id']},
+      );
+      if (!mounted) return;
+      if (battle) {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => BattleResultScreen(
+              matchId: row['id'],
+              initialState: {...data, 'status': 'completed'},
+              viewerId: session.profile!.id,
+              reportLoader: () async => data,
+            ),
+          ),
+        );
+      } else {
+        context.push(
+          '/review',
+          extra: (data['questions'] as List)
+              .map((q) => Map<String, dynamic>.from(q))
+              .toList(),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        showMessage(context, 'Couldn’t load this review. Please retry.');
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: ArenaBar(title: const Text('History')),
+    body: PageBody(
+      maxWidth: 800,
+      child: rows.isEmpty && loading
+          ? const SkeletonList()
+          : ListView(
               padding: const EdgeInsets.all(24),
               children: [
-                if (matches.isNotEmpty) ...[
-                  Text('Battles', style: context.type.titleLarge),
-                  const SizedBox(height: 16),
-                ],
-                ...matches.map(
-                  (m) => ListTile(
-                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                    leading: Icon(
-                      m['result'] == 'win'
-                          ? Icons.emoji_events_rounded
-                          : Icons.bolt_rounded,
-                      color: ArenaTokens.violet,
-                    ),
-                    title: Text('You vs ${m['opponent']}'),
-                    subtitle: Text('${m['result']} · ${m['score']} points'),
-                    trailing: const Icon(Icons.chevron_right_rounded),
-                    onTap: () async {
-                      try {
-                        final review = await QuizRepository(
-                          session,
-                        ).rpc('get_match_review', {'match_id': m['id']});
-                        if (context.mounted) {
-                          if (review['players'] is List) {
-                            Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => BattleResultScreen(
-                                  matchId: m['id'],
-                                  initialState: {
-                                    ...review,
-                                    'status': 'completed',
-                                  },
-                                  viewerId: session.profile!.id,
-                                  reportLoader: () async => review,
-                                ),
-                              ),
-                            );
-                          } else {
-                            context.push(
-                              '/review',
-                              extra: (review['questions'] as List)
-                                  .map((q) => Map<String, dynamic>.from(q))
-                                  .toList(),
-                            );
-                          }
-                        }
-                      } catch (_) {
-                        if (context.mounted) {
-                          showMessage(
-                            context,
-                            'Couldn’t load this review. Please retry.',
-                          );
-                        }
-                      }
-                    },
+                if (error != null) ...[
+                  Text(error!),
+                  TextButton(
+                    onPressed: () => load(reset: true),
+                    child: const Text('Retry'),
                   ),
-                ),
-                if (cached.isNotEmpty) ...[
-                  const SizedBox(height: 20),
-                  Text('Saved reviews', style: context.type.titleLarge),
-                  const SizedBox(height: 12),
                 ],
-                ...cached.map(
-                  (r) => ListTile(
-                    leading: const Icon(Icons.fact_check_rounded),
+                if (rows.isEmpty && !loading && error == null)
+                  EmptyState(
+                    title: 'Your story starts with a round',
+                    message:
+                        'Your battles, daily challenges and practice reviews will appear here.',
+                    action: OutlinedButton(
+                      onPressed: () =>
+                          context.push('/categories?mode=practice'),
+                      child: const Text('Try practice'),
+                    ),
+                  ),
+                ...rows.map(
+                  (row) => ListTile(
+                    leading: Icon(
+                      row['mode'] == 'battle'
+                          ? Icons.bolt_rounded
+                          : Icons.fact_check_outlined,
+                    ),
                     title: Text(
-                      '${r['mode'] == 'daily' ? 'Daily Challenge' : 'Practice'} · ${r['score']} points',
+                      row['mode'] == 'battle'
+                          ? 'You vs ${row['title']}'
+                          : row['title'],
                     ),
                     subtitle: Text(
-                      '${r['correct']}/${r['count']} correct${r['preview'] == true ? ' · local preview' : ''}',
+                      '${row['score']} marks · ${row['played_at'].toString().substring(0, 10)}',
                     ),
                     trailing: const Icon(Icons.chevron_right_rounded),
-                    onTap: () => context.push(
-                      '/review',
-                      extra: (r['questions'] as List)
-                          .map((q) => Map<String, dynamic>.from(q))
-                          .toList(),
-                    ),
+                    onTap: () => review(row),
                   ),
                 ),
+                if (rows.isNotEmpty && more)
+                  TextButton(
+                    onPressed: loading ? null : () => load(),
+                    child: Text(loading ? 'Loading…' : 'Load more'),
+                  ),
               ],
-            );
-          },
-        ),
-      ),
-    );
-  }
+            ),
+    ),
+  );
 }

@@ -9,7 +9,7 @@ class ScoreChart extends StatelessWidget {
     required this.opponent,
     required this.opponentName,
   });
-  final List<int> yours, opponent;
+  final List<num> yours, opponent;
   final String opponentName;
   @override
   Widget build(BuildContext context) => Semantics(
@@ -109,15 +109,15 @@ class _ScorePainter extends CustomPainter {
     this.fontSize,
     this.progress,
   );
-  final List<int> you, other;
+  final List<num> you, other;
   final Color accent, muted, line;
   final double fontSize, progress;
   @override
   void paint(Canvas canvas, Size size) {
     if (you.length < 2) return;
     final maxValue = math.max(
-      20,
-      math.max(you.fold<int>(0, math.max), other.fold<int>(0, math.max)),
+      2.5,
+      math.max(you.fold<num>(0, math.max), other.fold<num>(0, math.max)),
     );
     final top = 8.0,
         left = 40.0,
@@ -147,9 +147,9 @@ class _ScorePainter extends CustomPainter {
           ..color = line
           ..strokeWidth = 1,
       );
-      label('${(maxValue * i / 2).round()}', Offset(0, y - fontSize / 2));
+      label((maxValue * i / 2).toStringAsFixed(2), Offset(0, y - fontSize / 2));
     }
-    void series(List<int> data, Color color, bool dashed) {
+    void series(List<num> data, Color color, bool dashed) {
       for (var i = 1; i < data.length; i++) {
         final a = Offset(
           left + width * (i - 1) / (data.length - 1),

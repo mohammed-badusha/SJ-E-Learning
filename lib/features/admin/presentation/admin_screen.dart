@@ -45,10 +45,24 @@ class _AdminState extends ConsumerState<AdminScreen> {
     Icons.insights_rounded,
   ];
   QuizRepository get repo => QuizRepository(ref.read(sessionProvider));
+  late final VoidCallback stopListening;
   @override
   void initState() {
     super.initState();
+    final changes = ref.read(sessionProvider).dataChanges;
+    changes.addListener(onDataChanged);
+    stopListening = () => changes.removeListener(onDataChanged);
     load();
+  }
+
+  void onDataChanged() {
+    if (mounted) setState(load);
+  }
+
+  @override
+  void dispose() {
+    stopListening();
+    super.dispose();
   }
 
   void load() {
@@ -804,7 +818,12 @@ class _AdminState extends ConsumerState<AdminScreen> {
                   contentPadding: EdgeInsets.zero,
                   title: Text(key.replaceAll('_', ' ')),
                   subtitle: Text('${d[key]}'),
-                  trailing: role == AdminRole.superAdmin
+                  trailing:
+                      role == AdminRole.superAdmin &&
+                          ![
+                            'questions_per_match',
+                            'search_timeout_seconds',
+                          ].contains(key)
                       ? IconButton(
                           icon: const Icon(Icons.edit_outlined),
                           tooltip: 'Edit ${key.replaceAll('_', ' ')}',

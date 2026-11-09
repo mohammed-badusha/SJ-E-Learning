@@ -1,6 +1,4 @@
-import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_ce_flutter/hive_flutter.dart';
 
 final standingsCacheProvider = Provider((_) => StandingsCache());
 
@@ -18,16 +16,7 @@ class StandingsCache {
       _requests.update(key, (n) => n + 1, ifAbsent: () => 1);
   Map<String, dynamic>? read(String key, String period) {
     var item = _memory[key];
-    if (item == null && Hive.isBoxOpen('preferences')) {
-      final raw = Hive.box('preferences').get(key);
-      if (raw is String) {
-        try {
-          item = Map<String, dynamic>.from(jsonDecode(raw));
-        } on FormatException {
-          return null;
-        }
-      }
-    }
+
     if (item == null || item['period'] != period) return null;
     return item['data'] as Map<String, dynamic>?;
   }
@@ -41,12 +30,5 @@ class StandingsCache {
     if (request != _requests[key]) return;
     final item = {'period': period, 'data': data};
     _memory[key] = item;
-    if (Hive.isBoxOpen('preferences')) {
-      try {
-        await Hive.box('preferences').put(key, jsonEncode(item));
-      } on Exception {
-        /* The in-memory copy remains available. */
-      }
-    }
   }
 }

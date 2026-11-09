@@ -3,15 +3,24 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'cue_mixer.dart';
+import '../../features/auth/data/session.dart';
 
 final audioBackendProvider = Provider<AudioBackend>(
   (ref) => DeviceAudioBackend(),
 );
 final audioProvider = Provider<AudioController>((ref) {
   final controller = AudioController(backend: ref.watch(audioBackendProvider));
-  ref.onDispose(controller.dispose);
+  final session = ref.watch(sessionProvider);
+  controller.saveSetting = (key, value) =>
+      session.savePreferences({key: value});
+  void sync() => controller.applyPreferences(session.preferences);
+  session.addListener(sync);
+  sync();
+  ref.onDispose(() {
+    session.removeListener(sync);
+    controller.dispose();
+  });
   return controller;
 });
 
@@ -148,17 +157,7 @@ class _DeviceCueVoice implements CueVoice {
 class AudioController extends ChangeNotifier with WidgetsBindingObserver {
   AudioController({required this.backend, this.observeLifecycle = true}) {
     if (observeLifecycle) WidgetsBinding.instance.addObserver(this);
-    if (Hive.isBoxOpen('preferences')) {
-      final prefs = Hive.box<dynamic>('preferences');
-      effectsEnabled = prefs.get('sound_effects', defaultValue: true) as bool;
-      musicEnabled = prefs.get('music_enabled', defaultValue: true) as bool;
-      effectVolume = (prefs.get('effects_volume', defaultValue: .7) as num)
-          .toDouble()
-          .clamp(0, 1);
-      musicLevel = (prefs.get('music_volume', defaultValue: .22) as num)
-          .toDouble()
-          .clamp(0, 1);
-    }
+
     _cueSubscription = backend.cueActivity.listen((count) {
       _activeCues = count;
       _run(_syncMusicVolume);
@@ -189,10 +188,20 @@ class AudioController extends ChangeNotifier with WidgetsBindingObserver {
     if (!_closed) notifyListeners();
   }
 
+  Future<void> Function(String, Object)? saveSetting;
+  void applyPreferences(Map<String, dynamic> prefs) {
+    effectsEnabled = prefs['sound_effects'] as bool? ?? true;
+    musicEnabled = prefs['music_enabled'] as bool? ?? true;
+    effectVolume = (prefs['effects_volume'] as num? ?? .7).toDouble();
+    musicLevel = (prefs['music_volume'] as num? ?? .22).toDouble();
+    _reconcile();
+    _run(_syncMusicVolume);
+    _notify();
+  }
+
   void _save(String key, Object value) {
-    if (Hive.isBoxOpen('preferences')) {
-      unawaited(Hive.box<dynamic>('preferences').put(key, value));
-    }
+    final save = saveSetting;
+    if (save != null) unawaited(save(key, value));
   }
 
   void _run(Future<void> Function() operation) {

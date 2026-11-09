@@ -33,6 +33,8 @@ class _CourseCarouselState extends State<CourseCarousel>
         MediaQuery.disableAnimationsOf(context) ||
         MediaQuery.accessibleNavigationOf(context);
     visible =
+        // Keep compatibility with the repository's pinned Flutter 3.35 SDK.
+        // ignore: deprecated_member_use
         TickerMode.of(context) && (ModalRoute.isCurrentOf(context) ?? true);
     schedule();
   }

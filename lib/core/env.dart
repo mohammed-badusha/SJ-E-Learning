@@ -10,7 +10,7 @@ abstract final class Env {
   );
   static const redirectUrl = String.fromEnvironment(
     'AUTH_REDIRECT_URL',
-    defaultValue: 'in.sjacademy.quiz://login-callback',
+    defaultValue: 'com.sjelearning.quiz://login-callback/',
   );
   static const environment = String.fromEnvironment(
     'APP_ENV',

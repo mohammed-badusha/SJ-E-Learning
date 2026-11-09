@@ -22,6 +22,11 @@ class SettingsScreen extends ConsumerWidget {
           child: ListView(
             padding: const EdgeInsets.all(24),
             children: [
+              if (session.error != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Text(session.error!),
+                ),
               ArenaPanel(
                 child: Row(
                   children: [

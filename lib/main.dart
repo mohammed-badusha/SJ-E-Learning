@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/env.dart';
 import 'core/audio/audio_controller.dart';
@@ -14,9 +13,6 @@ import 'shared/widgets.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Hive.initFlutter();
-  await Hive.openBox<dynamic>('preferences');
-  await Hive.openBox<dynamic>('review');
   if (Env.configured) {
     await Supabase.initialize(
       url: Env.supabaseUrl,

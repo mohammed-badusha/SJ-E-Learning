@@ -4,5 +4,5 @@
   "SUPABASE_PUBLISHABLE_KEY": "YOUR_PUBLIC_KEY",
   "GOOGLE_WEB_CLIENT_ID": "YOUR_WEB_CLIENT_ID.apps.googleusercontent.com",
   "GOOGLE_IOS_CLIENT_ID": "YOUR_IOS_CLIENT_ID.apps.googleusercontent.com",
-  "AUTH_REDIRECT_URL": "in.sjacademy.quiz://login-callback"
+  "AUTH_REDIRECT_URL": "com.sjelearning.quiz://login-callback/"
 }

@@ -14,10 +14,24 @@ class DailyScreen extends ConsumerStatefulWidget {
 
 class _DailyState extends ConsumerState<DailyScreen> {
   late Future<Map<String, dynamic>> future;
+  late final VoidCallback stopListening;
   @override
   void initState() {
     super.initState();
+    final changes = ref.read(sessionProvider).dataChanges;
+    changes.addListener(onDataChanged);
+    stopListening = () => changes.removeListener(onDataChanged);
     load();
+  }
+
+  void onDataChanged() {
+    if (mounted) setState(load);
+  }
+
+  @override
+  void dispose() {
+    stopListening();
+    super.dispose();
   }
 
   void load() {

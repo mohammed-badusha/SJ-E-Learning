@@ -17,6 +17,7 @@ class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
   final text = TextEditingController(),
       explanation = TextEditingController(),
       seconds = TextEditingController(text: '15');
+  final topicName = TextEditingController(), exam = TextEditingController();
   final options = <TextEditingController>[];
   int correct = 0;
   String? category;
@@ -34,6 +35,8 @@ class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
       explanation.text = q['explanation'];
       seconds.text = '${q['time_limit_seconds']}';
       category = q['category_id'];
+      topicName.text = q['topic_name'] ?? '';
+      exam.text = q['exam'] ?? '';
       difficulty = q['difficulty'];
       status = q['status'];
       for (final o in q['options'] as List) {
@@ -52,6 +55,8 @@ class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
   @override
   void dispose() {
     text.dispose();
+    topicName.dispose();
+    exam.dispose();
     explanation.dispose();
     seconds.dispose();
     for (final o in options) {
@@ -64,6 +69,7 @@ class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
     final duration = int.tryParse(seconds.text);
     final values = options.map((o) => o.text.trim()).toList();
     if (category == null ||
+        values.length != 4 ||
         text.text.trim().length < 4 ||
         explanation.text.trim().isEmpty ||
         duration == null ||
@@ -92,7 +98,11 @@ class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
                 if (widget.question != null && !duplicate)
                   'id': widget.question!['id'],
                 'category_id': category,
-                if (category == widget.question?['category_id'])
+                'topic_name': topicName.text.trim(),
+                'exam': exam.text.trim(),
+                if (category == widget.question?['category_id'] &&
+                    topicName.text.trim() ==
+                        (widget.question?['topic_name'] ?? ''))
                   'subtopic_id': widget.question?['subtopic_id'],
                 if (widget.question?['image_url'] != null)
                   'image_url': widget.question?['image_url'],
@@ -198,7 +208,7 @@ class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
                     ),
                   ),
                 ),
-                if (canEdit && options.length > 2)
+                if (canEdit && options.length > 4)
                   IconButton(
                     onPressed: () => setState(() {
                       options.removeAt(i).dispose();
@@ -212,13 +222,27 @@ class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
               ],
             ),
           ),
-        if (canEdit && options.length < 6)
+        if (canEdit && options.length < 4)
           TextButton.icon(
             onPressed: () =>
                 setState(() => options.add(TextEditingController())),
             icon: const Icon(Icons.add_rounded),
             label: const Text('Add option'),
           ),
+        const SizedBox(height: 16),
+        TextField(
+          controller: topicName,
+          enabled: canEdit,
+          decoration: const InputDecoration(
+            labelText: 'Topic (existing or new)',
+          ),
+        ),
+        const SizedBox(height: 16),
+        TextField(
+          controller: exam,
+          enabled: canEdit,
+          decoration: const InputDecoration(labelText: 'Exam (optional)'),
+        ),
         const SizedBox(height: 16),
         TextField(
           controller: seconds,

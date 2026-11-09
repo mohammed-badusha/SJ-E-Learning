@@ -3,7 +3,7 @@ class BattlePlayerStats {
     : id = json['id'] as String,
       avatarUrl = json['avatar_url'] as String?,
       name = json['full_name'] as String? ?? 'Learner',
-      score = (json['score'] as num?)?.toInt() ?? 0,
+      score = (json['score'] as num?) ?? 0,
       ratingBefore = (json['rating_before'] ?? json['rating'] ?? 1000) as int,
       ratingAfter = (json['rating_after'] as num?)?.toInt(),
       xp = (json['xp_gained'] as num?)?.toInt() ?? 0,
@@ -16,9 +16,10 @@ class BattlePlayerStats {
       avgResponseMs = (json['avg_response_ms'] as num?)?.toInt(),
       fastestCorrectMs = (json['fastest_correct_ms'] as num?)?.toInt(),
       basePoints = (json['base_points'] as num?)?.toInt(),
-      speedBonus = (json['speed_bonus'] as num?)?.toInt();
+      speedBonus = json['speed_bonus'] as num?;
   final String id, name;
-  final int score, ratingBefore, xp;
+  final num score;
+  final int ratingBefore, xp;
   final int? ratingAfter,
       correct,
       wrong,
@@ -26,8 +27,8 @@ class BattlePlayerStats {
       answered,
       avgResponseMs,
       fastestCorrectMs,
-      basePoints,
-      speedBonus;
+      basePoints;
+  final num? speedBonus;
   final double? accuracy;
   final String? result, avatarUrl;
   int get ratingChange => (ratingAfter ?? ratingBefore) - ratingBefore;
@@ -59,13 +60,12 @@ class BattleReport {
   BattlePlayerStats player(String id) => players.firstWhere((p) => p.id == id);
   BattlePlayerStats opponent(String id) =>
       players.firstWhere((p) => p.id != id);
-  List<int> cumulativeScores({bool opponent = false}) {
-    var total = 0;
+  List<num> cumulativeScores({bool opponent = false}) {
+    num total = 0;
     return [
       0,
       ...questions.map((q) {
-        total +=
-            (q[opponent ? 'opponent_points' : 'points'] as num?)?.toInt() ?? 0;
+        total += (q[opponent ? 'opponent_points' : 'points'] as num?) ?? 0;
         return total;
       }),
     ];

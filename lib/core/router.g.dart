@@ -27,9 +27,9 @@ List<RouteBase> get $appRoutes => [
 ];
 
 RouteBase get $homeRoute =>
-    GoRouteData.$route(path: '/', factory: _$HomeRoute._fromState);
+    GoRouteData.$route(path: '/', factory: $HomeRoute._fromState);
 
-mixin _$HomeRoute on GoRouteData {
+mixin $HomeRoute on GoRouteData {
   static HomeRoute _fromState(GoRouterState state) => const HomeRoute();
 
   @override
@@ -50,9 +50,9 @@ mixin _$HomeRoute on GoRouteData {
 }
 
 RouteBase get $loginRoute =>
-    GoRouteData.$route(path: '/login', factory: _$LoginRoute._fromState);
+    GoRouteData.$route(path: '/login', factory: $LoginRoute._fromState);
 
-mixin _$LoginRoute on GoRouteData {
+mixin $LoginRoute on GoRouteData {
   static LoginRoute _fromState(GoRouterState state) => const LoginRoute();
 
   @override
@@ -74,10 +74,10 @@ mixin _$LoginRoute on GoRouteData {
 
 RouteBase get $completeProfileRoute => GoRouteData.$route(
   path: '/complete-profile',
-  factory: _$CompleteProfileRoute._fromState,
+  factory: $CompleteProfileRoute._fromState,
 );
 
-mixin _$CompleteProfileRoute on GoRouteData {
+mixin $CompleteProfileRoute on GoRouteData {
   static CompleteProfileRoute _fromState(GoRouterState state) =>
       const CompleteProfileRoute();
 
@@ -98,12 +98,10 @@ mixin _$CompleteProfileRoute on GoRouteData {
   void replace(BuildContext context) => context.replace(location);
 }
 
-RouteBase get $categoryRoute => GoRouteData.$route(
-  path: '/categories',
-  factory: _$CategoryRoute._fromState,
-);
+RouteBase get $categoryRoute =>
+    GoRouteData.$route(path: '/categories', factory: $CategoryRoute._fromState);
 
-mixin _$CategoryRoute on GoRouteData {
+mixin $CategoryRoute on GoRouteData {
   static CategoryRoute _fromState(GoRouterState state) =>
       CategoryRoute(mode: state.uri.queryParameters['mode'] ?? 'practice');
 
@@ -130,9 +128,9 @@ mixin _$CategoryRoute on GoRouteData {
 }
 
 RouteBase get $quizRoute =>
-    GoRouteData.$route(path: '/quiz', factory: _$QuizRoute._fromState);
+    GoRouteData.$route(path: '/quiz', factory: $QuizRoute._fromState);
 
-mixin _$QuizRoute on GoRouteData {
+mixin $QuizRoute on GoRouteData {
   static QuizRoute _fromState(GoRouterState state) => QuizRoute(
     category: state.uri.queryParameters['category'] ?? 'mixed',
     subtopic: state.uri.queryParameters['subtopic'],
@@ -144,6 +142,10 @@ mixin _$QuizRoute on GoRouteData {
           _$boolConverter,
         ) ??
         true,
+    exam: state.uri.queryParameters['exam'],
+    difficulty: state.uri.queryParameters['difficulty'],
+    count:
+        _$convertMapValue('count', state.uri.queryParameters, int.parse) ?? 10,
   );
 
   QuizRoute get _self => this as QuizRoute;
@@ -156,6 +158,9 @@ mixin _$QuizRoute on GoRouteData {
       if (_self.subtopic != null) 'subtopic': _self.subtopic,
       if (_self.mode != 'practice') 'mode': _self.mode,
       if (_self.timed != true) 'timed': _self.timed.toString(),
+      if (_self.exam != null) 'exam': _self.exam,
+      if (_self.difficulty != null) 'difficulty': _self.difficulty,
+      if (_self.count != 10) 'count': _self.count.toString(),
     },
   );
 
@@ -194,9 +199,9 @@ bool _$boolConverter(String value) {
 }
 
 RouteBase get $reviewRoute =>
-    GoRouteData.$route(path: '/review', factory: _$ReviewRoute._fromState);
+    GoRouteData.$route(path: '/review', factory: $ReviewRoute._fromState);
 
-mixin _$ReviewRoute on GoRouteData {
+mixin $ReviewRoute on GoRouteData {
   static ReviewRoute _fromState(GoRouterState state) =>
       ReviewRoute($extra: state.extra as List<Map<String, dynamic>>?);
 
@@ -223,10 +228,10 @@ mixin _$ReviewRoute on GoRouteData {
 
 RouteBase get $matchmakingRoute => GoRouteData.$route(
   path: '/matchmaking',
-  factory: _$MatchmakingRoute._fromState,
+  factory: $MatchmakingRoute._fromState,
 );
 
-mixin _$MatchmakingRoute on GoRouteData {
+mixin $MatchmakingRoute on GoRouteData {
   static MatchmakingRoute _fromState(GoRouterState state) => MatchmakingRoute(
     category: state.uri.queryParameters['category'] ?? 'mixed',
     subtopic: state.uri.queryParameters['subtopic'],
@@ -258,9 +263,9 @@ mixin _$MatchmakingRoute on GoRouteData {
 }
 
 RouteBase get $battleRoute =>
-    GoRouteData.$route(path: '/battle/:id', factory: _$BattleRoute._fromState);
+    GoRouteData.$route(path: '/battle/:id', factory: $BattleRoute._fromState);
 
-mixin _$BattleRoute on GoRouteData {
+mixin $BattleRoute on GoRouteData {
   static BattleRoute _fromState(GoRouterState state) =>
       BattleRoute(id: state.pathParameters['id']!);
 
@@ -285,9 +290,9 @@ mixin _$BattleRoute on GoRouteData {
 }
 
 RouteBase get $dailyRoute =>
-    GoRouteData.$route(path: '/daily', factory: _$DailyRoute._fromState);
+    GoRouteData.$route(path: '/daily', factory: $DailyRoute._fromState);
 
-mixin _$DailyRoute on GoRouteData {
+mixin $DailyRoute on GoRouteData {
   static DailyRoute _fromState(GoRouterState state) => const DailyRoute();
 
   @override
@@ -309,10 +314,10 @@ mixin _$DailyRoute on GoRouteData {
 
 RouteBase get $leaderboardRoute => GoRouteData.$route(
   path: '/leaderboard',
-  factory: _$LeaderboardRoute._fromState,
+  factory: $LeaderboardRoute._fromState,
 );
 
-mixin _$LeaderboardRoute on GoRouteData {
+mixin $LeaderboardRoute on GoRouteData {
   static LeaderboardRoute _fromState(GoRouterState state) =>
       const LeaderboardRoute();
 
@@ -334,9 +339,9 @@ mixin _$LeaderboardRoute on GoRouteData {
 }
 
 RouteBase get $historyRoute =>
-    GoRouteData.$route(path: '/history', factory: _$HistoryRoute._fromState);
+    GoRouteData.$route(path: '/history', factory: $HistoryRoute._fromState);
 
-mixin _$HistoryRoute on GoRouteData {
+mixin $HistoryRoute on GoRouteData {
   static HistoryRoute _fromState(GoRouterState state) => const HistoryRoute();
 
   @override
@@ -357,9 +362,9 @@ mixin _$HistoryRoute on GoRouteData {
 }
 
 RouteBase get $profileRoute =>
-    GoRouteData.$route(path: '/profile', factory: _$ProfileRoute._fromState);
+    GoRouteData.$route(path: '/profile', factory: $ProfileRoute._fromState);
 
-mixin _$ProfileRoute on GoRouteData {
+mixin $ProfileRoute on GoRouteData {
   static ProfileRoute _fromState(GoRouterState state) => const ProfileRoute();
 
   @override
@@ -380,9 +385,9 @@ mixin _$ProfileRoute on GoRouteData {
 }
 
 RouteBase get $settingsRoute =>
-    GoRouteData.$route(path: '/settings', factory: _$SettingsRoute._fromState);
+    GoRouteData.$route(path: '/settings', factory: $SettingsRoute._fromState);
 
-mixin _$SettingsRoute on GoRouteData {
+mixin $SettingsRoute on GoRouteData {
   static SettingsRoute _fromState(GoRouterState state) => const SettingsRoute();
 
   @override
@@ -404,10 +409,10 @@ mixin _$SettingsRoute on GoRouteData {
 
 RouteBase get $editProfileRoute => GoRouteData.$route(
   path: '/edit-profile',
-  factory: _$EditProfileRoute._fromState,
+  factory: $EditProfileRoute._fromState,
 );
 
-mixin _$EditProfileRoute on GoRouteData {
+mixin $EditProfileRoute on GoRouteData {
   static EditProfileRoute _fromState(GoRouterState state) =>
       const EditProfileRoute();
 
@@ -429,9 +434,9 @@ mixin _$EditProfileRoute on GoRouteData {
 }
 
 RouteBase get $adminRoute =>
-    GoRouteData.$route(path: '/admin', factory: _$AdminRoute._fromState);
+    GoRouteData.$route(path: '/admin', factory: $AdminRoute._fromState);
 
-mixin _$AdminRoute on GoRouteData {
+mixin $AdminRoute on GoRouteData {
   static AdminRoute _fromState(GoRouterState state) => const AdminRoute();
 
   @override
@@ -453,10 +458,10 @@ mixin _$AdminRoute on GoRouteData {
 
 RouteBase get $questionEditorRoute => GoRouteData.$route(
   path: '/admin/question',
-  factory: _$QuestionEditorRoute._fromState,
+  factory: $QuestionEditorRoute._fromState,
 );
 
-mixin _$QuestionEditorRoute on GoRouteData {
+mixin $QuestionEditorRoute on GoRouteData {
   static QuestionEditorRoute _fromState(GoRouterState state) =>
       QuestionEditorRoute($extra: state.extra as Map<String, dynamic>?);
 
@@ -482,9 +487,9 @@ mixin _$QuestionEditorRoute on GoRouteData {
 }
 
 RouteBase get $galleryRoute =>
-    GoRouteData.$route(path: '/gallery', factory: _$GalleryRoute._fromState);
+    GoRouteData.$route(path: '/gallery', factory: $GalleryRoute._fromState);
 
-mixin _$GalleryRoute on GoRouteData {
+mixin $GalleryRoute on GoRouteData {
   static GalleryRoute _fromState(GoRouterState state) => const GalleryRoute();
 
   @override

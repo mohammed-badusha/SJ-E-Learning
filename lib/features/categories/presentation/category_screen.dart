@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:hive_ce_flutter/hive_flutter.dart';
 import '../../../core/theme.dart';
 import '../../../shared/widgets.dart';
 import '../../../shared/arena_panel.dart';
@@ -19,38 +18,63 @@ class _CategoryState extends ConsumerState<CategoryScreen> {
   late Future<List<QuizCategory>> future;
   Future<List<Map<String, dynamic>>>? topics;
   String selected = 'mixed';
-  String? topic;
+  String? topic, difficulty;
+  int count = 10;
+  final exam = TextEditingController();
   bool timed = true;
   QuizRepository get repo => QuizRepository(ref.read(sessionProvider));
+  late final VoidCallback stopListening;
   @override
   void initState() {
     super.initState();
-    if (Hive.isBoxOpen('preferences')) {
-      selected = Hive.box('preferences').get('category', defaultValue: 'mixed');
-    }
+
+    selected =
+        ref.read(sessionProvider).preferences['category'] as String? ?? 'mixed';
+    final changes = ref.read(sessionProvider).dataChanges;
+    changes.addListener(onDataChanged);
+    stopListening = () => changes.removeListener(onDataChanged);
     load();
+  }
+
+  void onDataChanged() {
+    if (mounted) {
+      setState(() {
+        load();
+        topics = selected == 'mixed' ? null : repo.subtopics(selected);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    exam.dispose();
+    stopListening();
+    super.dispose();
   }
 
   void load() => future = repo.categories();
   void choose(String id) {
+    ref.read(sessionProvider).savePreferences({'category': id});
     setState(() {
       selected = id;
       topic = null;
       topics = id == 'mixed' ? null : repo.subtopics(id);
     });
-    if (Hive.isBoxOpen('preferences')) {
-      Hive.box('preferences').put('category', id);
-    }
   }
 
   void start() => context.push(
     Uri(
       path: widget.mode == 'battle' ? '/matchmaking' : '/quiz',
       queryParameters: {
-        'category': selected,
+        'category': widget.mode == 'battle' ? 'mixed' : selected,
         'mode': 'practice',
         'timed': '$timed',
-        if (topic != null) 'subtopic': topic!,
+        if (widget.mode == 'practice') ...{
+          'count': '$count',
+          if (difficulty != null) 'difficulty': difficulty!,
+          if (exam.text.trim().isNotEmpty) 'exam': exam.text.trim(),
+        },
+        if (topic != null && widget.mode != 'battle') 'subtopic': topic!,
       },
     ).toString(),
   );
@@ -106,16 +130,14 @@ class _CategoryState extends ConsumerState<CategoryScreen> {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    categories
-                                        .firstWhere((c) => c.id == selected)
-                                        .name,
+                                    'Four-subject battle',
                                     style: context.type.headlineSmall?.copyWith(
                                       color: Colors.white,
                                     ),
                                   ),
                                   const SizedBox(height: 8),
                                   const Text(
-                                    'Timed questions · Speed bonus',
+                                    'Reasoning 40s · GK 15s\nMaths 40s · English 15s',
                                     style: TextStyle(color: Color(0xffdce2fb)),
                                   ),
                                 ],
@@ -132,65 +154,106 @@ class _CategoryState extends ConsumerState<CategoryScreen> {
                       ),
                       const SizedBox(height: 22),
                     ],
-                    Text('Choose a subject', style: context.type.titleLarge),
-                    const SizedBox(height: 12),
-                    ArenaCard(
-                      padding: EdgeInsets.zero,
-                      child: Column(
-                        children: [
-                          for (final category in categories) ...[
-                            if (category != categories.first)
-                              const Divider(indent: 68),
-                            _SubjectChoice(
-                              category: category,
-                              selected: selected == category.id,
-                              onTap: () => choose(category.id),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    if (topics != null) ...[
-                      const SizedBox(height: 24),
-                      Text(
-                        'Narrow your focus',
-                        style: context.type.titleMedium,
-                      ),
+                    if (widget.mode != 'battle') ...[
+                      Text('Choose a subject', style: context.type.titleLarge),
                       const SizedBox(height: 12),
-                      FutureBuilder(
-                        future: topics,
-                        builder: (context, snapshot) {
-                          if (snapshot.hasError) {
-                            return TextButton(
-                              onPressed: () => setState(
-                                () => topics = repo.subtopics(selected),
-                              ),
-                              child: const Text('Retry loading topics'),
-                            );
-                          }
-                          return Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              ChoiceChip(
-                                label: const Text('All topics'),
-                                selected: topic == null,
-                                onSelected: (_) => setState(() => topic = null),
-                              ),
-                              ...?snapshot.data?.map(
-                                (t) => ChoiceChip(
-                                  label: Text(t['name']),
-                                  selected: topic == t['id'],
-                                  onSelected: (_) =>
-                                      setState(() => topic = t['id']),
-                                ),
+                      ArenaCard(
+                        padding: EdgeInsets.zero,
+                        child: Column(
+                          children: [
+                            for (final category in categories) ...[
+                              if (category != categories.first)
+                                const Divider(indent: 68),
+                              _SubjectChoice(
+                                category: category,
+                                selected: selected == category.id,
+                                onTap: () => choose(category.id),
                               ),
                             ],
-                          );
-                        },
+                          ],
+                        ),
                       ),
+                      if (topics != null) ...[
+                        const SizedBox(height: 24),
+                        Text(
+                          'Narrow your focus',
+                          style: context.type.titleMedium,
+                        ),
+                        const SizedBox(height: 12),
+                        FutureBuilder(
+                          future: topics,
+                          builder: (context, snapshot) {
+                            if (snapshot.hasError) {
+                              return TextButton(
+                                onPressed: () => setState(
+                                  () => topics = repo.subtopics(selected),
+                                ),
+                                child: const Text('Retry loading topics'),
+                              );
+                            }
+                            return Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                ChoiceChip(
+                                  label: const Text('All topics'),
+                                  selected: topic == null,
+                                  onSelected: (_) =>
+                                      setState(() => topic = null),
+                                ),
+                                ...?snapshot.data?.map(
+                                  (t) => ChoiceChip(
+                                    label: Text(t['name']),
+                                    selected: topic == t['id'],
+                                    onSelected: (_) =>
+                                        setState(() => topic = t['id']),
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ],
                     ],
                     if (widget.mode == 'practice') ...[
+                      DropdownButtonFormField<String>(
+                        initialValue: difficulty,
+                        decoration: const InputDecoration(
+                          labelText: 'Difficulty',
+                        ),
+                        items: [
+                          const DropdownMenuItem(
+                            value: null,
+                            child: Text('All difficulties'),
+                          ),
+                          ...['easy', 'medium', 'hard'].map(
+                            (d) => DropdownMenuItem(value: d, child: Text(d)),
+                          ),
+                        ],
+                        onChanged: (v) => setState(() => difficulty = v),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: exam,
+                        decoration: const InputDecoration(
+                          labelText: 'Exam (optional)',
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<int>(
+                        initialValue: count,
+                        decoration: const InputDecoration(
+                          labelText: 'Questions',
+                        ),
+                        items: [10, 20, 25]
+                            .map(
+                              (n) =>
+                                  DropdownMenuItem(value: n, child: Text('$n')),
+                            )
+                            .toList(),
+                        onChanged: (v) => setState(() => count = v ?? 10),
+                      ),
+
                       const SizedBox(height: 24),
                       ArenaCard(
                         padding: const EdgeInsets.symmetric(

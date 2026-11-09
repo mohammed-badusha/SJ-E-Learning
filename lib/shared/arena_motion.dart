@@ -37,13 +37,15 @@ class Arrive extends StatelessWidget {
 
 class CountMetric extends StatelessWidget {
   const CountMetric(this.value, {super.key, this.style, this.format});
-  final int value;
+  final num value;
   final TextStyle? style;
   final String Function(int)? format;
   @override
   Widget build(BuildContext context) {
-    String label(int n) => format?.call(n) ?? '$n';
-    Widget display(int n) => Text(
+    String label(num n) =>
+        format?.call(n.round()) ??
+        (value is int ? '${n.round()}' : n.toStringAsFixed(2));
+    Widget display(num n) => Text(
       label(n),
       style: style?.copyWith(
         fontFeatures: const [FontFeature.tabularFigures()],
@@ -57,7 +59,7 @@ class CountMetric extends StatelessWidget {
         duration: const Duration(milliseconds: 280),
         curve: arenaEase,
         tween: Tween(begin: 0, end: value.toDouble()),
-        builder: (_, n, _) => display(n.round()),
+        builder: (_, n, _) => display(n),
       ),
     );
   }

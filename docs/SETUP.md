@@ -39,10 +39,10 @@ CLI login/password prompts stay on your machine. Never send them through chat.
 7. In Supabase **Authentication → URL Configuration**, use `http://localhost:5173` as the development Site URL and add these redirect URLs:
    - `http://localhost:5173`
    - `http://127.0.0.1:5173`
-   - `in.sjacademy.quiz://login-callback`
+   - `com.sjelearning.quiz://login-callback/`
 8. Disable unwanted sign-in providers, including email/password and anonymous sign-in, in the dashboard. The app implements Google only.
 
-The app requests Google identity only. It uses browser OAuth on web and exchanges the native Google ID token through Supabase on phones. Provider setup reference: [Supabase Google sign-in](https://supabase.com/docs/guides/auth/social-sign-in/auth-google).
+The app requests Google identity only. It uses Supabase browser OAuth on web and phones. The Android callback is `com.sjelearning.quiz://login-callback/` and must be included in Supabase Auth redirect URLs. Provider setup reference: [Supabase Google sign-in](https://supabase.com/docs/guides/auth/social-sign-in/auth-google).
 
 Run:
 
@@ -52,13 +52,9 @@ flutter run -d chrome --web-port 5173 --dart-define-from-file=config/dev.json
 
 Sign in with Google, complete the mandatory name and mobile number, and confirm Home opens. Signing in as `badushamc312@gmail.com` should also show the **Admin** tab. Test a second account with the same phone: it should be rejected.
 
-## 3. Add Android Google sign-in
+## 3. Android Google sign-in
 
-1. Create an **Android OAuth client** in the same Google Cloud project.
-2. Use package name **`in.sjacademy.quiz_arena`**.
-3. Get the SHA-1/SHA-256 values with `cd android` then `./gradlew signingReport`. If SDK licenses are requested, review and accept them yourself using `flutter doctor --android-licenses` before continuing. This machine currently reports unaccepted Android SDK licenses.
-4. Register the debug signing SHA for development. Register release and Play App Signing SHA values before store distribution.
-5. Keep the **Web** client ID in `GOOGLE_WEB_CLIENT_ID`: it is the native plugin's `serverClientId`. No Firebase Auth or `google-services.json` is required for this configuration. [Official Android plugin setup](https://pub.dev/packages/google_sign_in_android).
+The app uses Supabase browser OAuth. Add `com.sjelearning.quiz://login-callback/` to Supabase Auth redirect URLs; the Android manifest already handles that callback. See [Android sign-in setup](ANDROID_GOOGLE_SIGNIN.md). No Firebase Auth or Android Google OAuth client is required for this flow.
 
 ```sh
 flutter run --dart-define-from-file=config/dev.json
@@ -67,7 +63,7 @@ flutter build apk --debug --dart-define-from-file=config/dev.json
 
 ## 4. iOS (when needed)
 
-Create an iOS OAuth client matching the Runner bundle ID shown in Xcode. Put its public ID in `GOOGLE_IOS_CLIENT_ID`. Add the corresponding reversed client ID to `CFBundleURLTypes` in `ios/Runner/Info.plist`, alongside the existing callback scheme. Native client IDs are passed from Dart; the reversed URL scheme still must be configured. [Official iOS plugin setup](https://pub.dev/packages/google_sign_in_ios).
+Before building for iOS, configure its app callback URL scheme and allow it in Supabase Auth redirect URLs. Verify the browser returns to the iOS app after Google sign-in.
 
 ## 5. Define admins directly in Supabase
 

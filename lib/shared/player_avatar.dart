@@ -57,7 +57,17 @@ class PlayerAvatar extends ConsumerWidget {
         Uri.tryParse(key)?.host.endsWith('.googleusercontent.com') == true) {
       image = NetworkImage(key);
     }
-    final fallback = AvatarBadge(name: name, size: size);
+    final colorCode = key.startsWith('color:#')
+        ? int.tryParse('FF${key.substring(7)}', radix: 16)
+        : null;
+    final fallback = colorCode == null
+        ? AvatarBadge(name: name, size: size)
+        : CircleAvatar(
+            radius: size / 2,
+            backgroundColor: Color(colorCode),
+            foregroundColor: Colors.white,
+            child: Text(name.isEmpty ? '?' : name.substring(0, 1)),
+          );
     return Semantics(
       image: true,
       label: 'Profile picture for $name',

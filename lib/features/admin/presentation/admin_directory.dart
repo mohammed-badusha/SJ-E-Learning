@@ -55,11 +55,17 @@ class _AdminDirectoryState extends State<AdminDirectory> {
   @override
   void initState() {
     super.initState();
+    widget.repo.session.dataChanges.addListener(onDataChanged);
     load(reset: true);
+  }
+
+  void onDataChanged() {
+    if (mounted) load(reset: true);
   }
 
   @override
   void dispose() {
+    widget.repo.session.dataChanges.removeListener(onDataChanged);
     search.dispose();
     super.dispose();
   }

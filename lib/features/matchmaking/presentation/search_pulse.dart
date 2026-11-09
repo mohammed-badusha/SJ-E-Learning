@@ -16,6 +16,8 @@ class _SearchPulseState extends State<SearchPulse>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    // Keep compatibility with the repository's pinned Flutter 3.35 SDK.
+    // ignore: deprecated_member_use
     if (!MediaQuery.disableAnimationsOf(context) && TickerMode.of(context)) {
       if (!controller.isAnimating) controller.repeat();
     } else {

@@ -355,8 +355,10 @@ class _BattleState extends ConsumerState<BattleScreen>
               matchId: widget.matchId,
               name: me['full_name'],
               rival: opponent['full_name'],
-              ownRank: RankTier.forRating(me['rating']).label,
-              rivalRank: RankTier.forRating(opponent['rating']).label,
+              ownRank:
+                  '${RankTier.forRating(me['rating']).label} · Level ${me['level'] ?? 1}',
+              rivalRank:
+                  '${RankTier.forRating(opponent['rating']).label} · Level ${opponent['level'] ?? 1}',
               ownPortrait: repo.session.profile!.avatarUrl,
               rivalPortrait:
                   opponent['avatar_url'] ??
@@ -449,7 +451,7 @@ class _BattleState extends ConsumerState<BattleScreen>
                       if (data!['question_index'] ==
                           (data!['question_count'] as int) - 1) ...[
                         Text(
-                          'Final round · Double points',
+                          'Final round · English',
                           style: TextStyle(
                             color: context.tokens.warning,
                             fontWeight: FontWeight.w500,
@@ -597,7 +599,7 @@ class _FaceOff extends StatelessWidget {
                 )
               else
                 CountMetric(
-                  data['score'] as int,
+                  data['score'] as num,
                   format: (n) => '$n pts',
                   style: context.type.titleMedium?.copyWith(
                     color: ArenaTokens.gold,

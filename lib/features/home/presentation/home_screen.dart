@@ -91,7 +91,7 @@ class HomeScreen extends ConsumerWidget {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                '25 questions \u00b7 Daily Challenge',
+                                '10 questions \u00b7 Daily Challenge',
                                 style: TextStyle(
                                   color: Colors.white.withValues(alpha: 0.8),
                                   fontSize: 12,

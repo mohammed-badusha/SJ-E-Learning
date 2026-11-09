@@ -23,10 +23,24 @@ class _LeaderboardState extends ConsumerState<LeaderboardScreen> {
   String type = 'weekly', arenaPeriod = 'weekly';
   late Future<Map<String, dynamic>> future;
   Map<String, dynamic>? cached;
+  late final VoidCallback stopListening;
   @override
   void initState() {
     super.initState();
+    final changes = ref.read(sessionProvider).dataChanges;
+    changes.addListener(onDataChanged);
+    stopListening = () => changes.removeListener(onDataChanged);
     load();
+  }
+
+  void onDataChanged() {
+    if (mounted) setState(load);
+  }
+
+  @override
+  void dispose() {
+    stopListening();
+    super.dispose();
   }
 
   void load() {

@@ -914,6 +914,7 @@ grant execute on function public.anonymize_account(uuid) to service_role;
 -- 202611080009_battle_reports.sql
 -- Backwards-compatible completed-match review, enriched with real comparison stats.
 -- Apply this migration only to existing projects; do not rerun setup.sql.
+
 create or replace function sj_private.match_player_report(mid uuid, participant uuid) returns jsonb
 language sql stable security definer set search_path='' as $$
  select jsonb_build_object('id',p.id,'full_name',p.full_name,'is_bot',p.is_bot,
@@ -1034,6 +1035,7 @@ end $$;
 
 -- 202611080011_report_portraits.sql
 -- Share the current player picture with the two participants in a completed battle report.
+
 create or replace function sj_private.match_player_report(mid uuid, participant uuid) returns jsonb
 language sql stable security definer set search_path='' as $$
  select jsonb_build_object('id',p.id,'full_name',p.full_name,'is_bot',p.is_bot,
@@ -1070,6 +1072,7 @@ $$;
 
 -- 202611080012_daily_and_admin_workspace.sql
 -- Apply once to an existing project after migration 011.
+
 -- Old answers have no receipt timestamp and retain their original time windows.
 alter table public.daily_attempt_answers add column answered_at timestamptz;
 alter table public.daily_attempt_answers alter column answered_at set default clock_timestamp();
@@ -1253,6 +1256,688 @@ begin
  end if;
  return jsonb_build_object('score',a.score,'correct_count',a.correct_count);
 end $$;
+
+
+-- 202611090014_four_round_battles.sql
+-- Additive rules v2. Existing snapshots and legacy scoring remain intact.
+
+alter table public.matches add column rules_version int not null default 1;
+alter table public.matches add column bot_style text;
+alter table public.match_players alter column score type numeric(12,4);
+alter table public.match_answers alter column points type numeric(12,4);
+alter table public.subtopics add column topic_group text;
+alter table public.questions add column exam text;
+create index questions_exam_pool on public.questions(exam,category_id,difficulty,id) where status='published';
+create index practice_owner_history on public.practice_attempts(user_id,started_at desc,id);
+create index daily_owner_history on public.daily_attempts(user_id,started_at desc,id);
+insert into public.app_settings(key,value) values ('search_timeout_seconds','10'),('questions_per_match','4'),('daily_question_count','10'),('label_bots','false')
+on conflict(key) do update set value=excluded.value;
+
+create table public.battle_rounds (
+ round_index int primary key check(round_index between 0 and 3),
+ subject_slug text not null unique,
+ duration_seconds int not null check(duration_seconds between 5 and 120)
+);
+insert into public.battle_rounds values (0,'reasoning',40),(1,'general-awareness',15),(2,'quant',40),(3,'english',15);
+alter table public.battle_rounds enable row level security;
+create policy read_rounds on public.battle_rounds for select to authenticated using(true);
+grant select on public.battle_rounds to authenticated;
+create table sj_private.bot_names(name text primary key);
+insert into sj_private.bot_names select unnest(array[
+ 'Aarav Sharma','Vivaan Patel','Aditya Nair','Vihaan Singh','Arjun Menon','Sai Kumar','Reyansh Gupta','Ayaan Khan',
+ 'Krishna Rao','Ishaan Shah','Shaurya Das','Atharv Joshi','Dhruv Reddy','Kabir Verma','Ritvik Iyer','Ansh Jain',
+ 'Rohan Mishra','Rahul Bose','Karan Mehta','Varun Pillai','Nikhil Bhat','Siddharth Roy','Pranav Sinha','Akash Sen',
+ 'Abhinav Yadav','Harsh Chauhan','Manish Tiwari','Deepak Pandey','Vikram Sethi','Sanjay Kapoor','Ajay Kulkarni','Vijay Desai',
+ 'Ravi Prasad','Suresh Naidu','Amit Saxena','Ankit Agarwal','Mohit Bansal','Gaurav Chawla','Piyush Goel','Yash Malhotra',
+ 'Aadhya Sharma','Ananya Nair','Diya Patel','Saanvi Singh','Myra Menon','Aarohi Shah','Anika Gupta','Isha Rao',
+ 'Kiara Joshi','Avni Reddy','Riya Das','Navya Jain','Sara Khan','Meera Iyer','Tara Bose','Nitya Verma',
+ 'Priya Mishra','Sneha Mehta','Pooja Pillai','Kavya Bhat','Neha Roy','Shreya Sinha','Aditi Sen','Swati Yadav',
+ 'Divya Chauhan','Rashmi Tiwari','Anjali Pandey','Nandini Sethi','Shruti Kapoor','Sakshi Kulkarni','Tanvi Desai','Kriti Prasad',
+ 'Lakshmi Naidu','Simran Saxena','Ishita Agarwal','Palak Bansal','Ritika Chawla','Vani Goel','Juhi Malhotra','Fathima Ali',
+ 'Aravind Raj','Keerthana Ravi','Muhammed Faris','Aparna Krishnan','Devika Suresh','Aswin Prakash','Amal Thomas','Anu Mathew'
+]);
+create function sj_private.battle_score(correct boolean, elapsed_ms int, duration_seconds int) returns numeric
+language sql immutable set search_path='' as $$
+ select case when correct then round(2 + .5 * greatest(0,least(1,1-elapsed_ms::numeric/(duration_seconds*1000))),4) else 0 end
+$$;
+create function sj_private.pick_questions(n int, subject uuid default null, topic uuid default null, exam_filter text default null, difficulty_filter text default null)
+returns uuid[] language plpgsql security definer set search_path='' as $$
+declare picked uuid[];
+begin
+ if n not between 1 and 100 or (difficulty_filter is not null and difficulty_filter not in ('easy','medium','hard')) then raise exception 'INVALID_FILTER'; end if;
+ select array_agg(id) into picked from (
+ select q.id from public.questions q join public.categories c on c.id=q.category_id and c.is_active
+ where q.status='published' and (subject is null or q.category_id=subject) and (topic is null or q.subtopic_id=topic)
+ and (exam_filter is null or q.exam=exam_filter) and (difficulty_filter is null or q.difficulty=difficulty_filter)
+ and (select count(*) from public.question_options o where o.question_id=q.id)=4
+ order by random() limit n) pool;
+ if coalesce(cardinality(picked),0)<>n then raise exception 'NOT_ENOUGH_QUESTIONS'; end if;
+ return picked;
+end $$;
+create or replace function sj_private.new_match(p1 uuid, p2 uuid, category uuid, topic uuid, mode text) returns uuid
+language plpgsql security definer set search_path='' as $$
+declare mid uuid; r record; qid uuid; snap jsonb; correct_rounds int[]; target int; style text; delay numeric; short boolean;
+begin
+ style=(array['Speedster','Analytical','Balanced','Wildcard'])[1+floor(random()*4)::int];
+ target=2+floor(random()*3)::int;
+ select array_agg(i) into correct_rounds from (select i from generate_series(0,3) i order by random() limit target) t;
+ insert into public.matches(category_id,mode,player1_id,player2_id,started_at,next_tick_at,rules_version,bot_style)
+ values(null,mode,p1,p2,now()+interval '3 seconds',now()+interval '3 seconds',2,case when mode='bot' then style end) returning id into mid;
+ insert into public.match_players(match_id,user_id,rating_before) select mid,id,rating from public.profiles where id in(p1,p2);
+ for r in select b.*,c.id category from public.battle_rounds b join public.categories c on c.slug=b.subject_slug and c.is_active order by b.round_index loop
+  qid=(sj_private.pick_questions(1,r.category))[1];
+  snap=sj_private.question_snapshot(qid)||jsonb_build_object('time_limit_seconds',r.duration_seconds);
+  insert into public.match_questions(match_id,question_index,question_id,snapshot,option_order) values(mid,r.round_index,qid,snap,snap->'options');
+  if mode='bot' then
+   short=r.duration_seconds=15;
+   delay=case style when 'Speedster' then case when short then 2+random()*4 else 8+random()*8 end
+     when 'Analytical' then case when short then 5+random()*6 else 20+random()*14 end
+     when 'Balanced' then case when short then 3+random()*5 else 12+random()*12 end
+     else 2+random()*(r.duration_seconds-3) end;
+   insert into public.bot_plans(match_id,question_index,will_be_correct,response_ms) values(mid,r.round_index,r.round_index=any(correct_rounds),floor(delay*1000)::int);
+  end if;
+ end loop;
+ if (select count(*) from public.match_questions where match_id=mid)<>4 then raise exception 'NOT_ENOUGH_QUESTIONS'; end if;
+ delete from public.matchmaking_queue where user_id in(p1,p2);
+ perform realtime.send(jsonb_build_object('match_id',mid),'match_found','user:'||p1::text,true);
+ if mode='live' then perform realtime.send(jsonb_build_object('match_id',mid),'match_found','user:'||p2::text,true); end if;
+ return mid;
+end $$;
+create or replace function public.join_matchmaking(category_id uuid default null, subtopic_id uuid default null) returns jsonb language plpgsql security definer set search_path='' as $$
+declare uid uuid=sj_private.require_player(); myrating int; opponent public.matchmaking_queue; mine public.matchmaking_queue; mid uuid;
+begin
+ perform sj_private.rate_limit('join',30);
+ perform 1 from public.profiles where id=uid for update;
+ select id into mid from public.matches where (player1_id=uid or player2_id=uid) and status in ('pending','in_progress') limit 1;
+ if mid is not null then return jsonb_build_object('match_id',mid); end if;
+ -- All new battles share the same four-subject queue.
+ if exists(select 1 from public.battle_rounds b left join public.categories c on c.slug=b.subject_slug and c.is_active
+ where c.id is null or not exists(select 1 from public.questions q where q.category_id=c.id and q.status='published'
+ and (select count(*) from public.question_options o where o.question_id=q.id)=4)) then raise exception 'NOT_ENOUGH_QUESTIONS'; end if;
+ select rating into myrating from public.profiles where id=uid;
+ insert into public.matchmaking_queue(user_id,category_id,subtopic_id,rating) values(uid,null,null,myrating)
+ on conflict(user_id) do nothing;
+ select * into mine from public.matchmaking_queue where user_id=uid for update;
+ select * into opponent from public.matchmaking_queue q where q.user_id<>uid and q.category_id is not distinct from mine.category_id
+ and (q.subtopic_id is not distinct from mine.subtopic_id or least(q.joined_at,mine.joined_at)<now()-interval '8 seconds')
+ and q.joined_at>now()-interval '60 seconds'
+ and abs(q.rating-myrating)<=100+100*floor(extract(epoch from(now()-least(q.joined_at,mine.joined_at)))/5)
+ order by abs(q.rating-myrating),q.joined_at for update skip locked limit 1;
+ if found then mid=sj_private.new_match(uid,opponent.user_id,mine.category_id,case when mine.subtopic_id is not distinct from opponent.subtopic_id then mine.subtopic_id else null end,'live'); end if;
+ return jsonb_build_object('match_id',mid,'joined_at',mine.joined_at,'server_now',clock_timestamp(),
+ 'search_timeout_seconds',coalesce((select value from public.app_settings where key='search_timeout_seconds'),'10'::jsonb));
+end $$;
+create or replace function public.start_bot_match() returns jsonb language plpgsql security definer set search_path='' as $$
+declare uid uuid=sj_private.require_player(); mine public.matchmaking_queue; bot uuid; mid uuid; timeout int;
+begin
+ perform 1 from public.profiles where id=uid for update;
+ select id into mid from public.matches where (player1_id=uid or player2_id=uid) and status in ('pending','in_progress') limit 1;
+ if mid is not null then return jsonb_build_object('match_id',mid); end if;
+ select * into mine from public.matchmaking_queue where user_id=uid for update;
+ if not found then raise exception 'NOT_QUEUED'; end if;
+ timeout=coalesce((select (value#>>'{}')::int from public.app_settings where key='search_timeout_seconds'),10);
+ if now()<mine.joined_at+make_interval(secs=>timeout) then raise exception 'SEARCH_NOT_EXPIRED'; end if;
+ insert into public.profiles(full_name,is_bot,rating,level,avatar_url)
+ select name,true,mine.rating,8+floor(random()*28)::int,'color:'||(array['#5B4CFF','#087E83','#376BD6','#B66A13'])[1+floor(random()*4)::int]
+ from sj_private.bot_names order by random() limit 1 returning id into bot;
+ mid=sj_private.new_match(uid,bot,mine.category_id,case when mine.joined_at<now()-interval '8 seconds' then null else mine.subtopic_id end,'bot');
+ return jsonb_build_object('match_id',mid);
+end $$;
+create or replace function sj_private.tick_match(mid uuid) returns void language plpgsql security definer set search_path='' as $$
+declare m public.matches; mq public.match_questions; bp public.bot_plans; n int; oid uuid; q jsonb; d1 boolean; d2 boolean;
+begin
+ select * into m from public.matches where id=mid for update skip locked;
+ if not found or m.status not in ('pending','in_progress') then return; end if;
+ select heartbeat_at<now()-interval '15 seconds' into d1 from public.match_players where match_id=mid and user_id=m.player1_id;
+ select heartbeat_at<now()-interval '15 seconds' into d2 from public.match_players where match_id=mid and user_id=m.player2_id;
+ if m.mode='bot' then d2=false; end if;
+ if d1 or d2 then perform sj_private.finalize_match(mid,case when d1 then m.player2_id else m.player1_id end,d1 and d2); return; end if;
+ select * into mq from public.match_questions where match_id=mid and question_index=m.current_question_index for update;
+ if m.phase in ('countdown','result') and now()>=m.next_tick_at then
+ if m.phase='result' then
+  if not exists(select 1 from public.match_questions where match_id=mid and question_index=m.current_question_index+1) then perform sj_private.finalize_match(mid); return; end if;
+  update public.matches set current_question_index=current_question_index+1 where id=mid returning * into m;
+  select * into mq from public.match_questions where match_id=mid and question_index=m.current_question_index;
+ end if;
+ update public.match_questions set started_at=clock_timestamp(),deadline_at=clock_timestamp()+make_interval(secs=>(snapshot->>'time_limit_seconds')::int) where id=mq.id returning * into mq;
+ update public.matches set status='in_progress',phase='question',next_tick_at=mq.deadline_at+interval '500 milliseconds' where id=mid;
+ perform sj_private.emit(mid,'question_start',sj_private.safe_question(mq.snapshot)||jsonb_build_object('started_at',mq.started_at,'deadline_at',mq.deadline_at,'question_index',mq.question_index));
+ return;
+ end if;
+ if m.phase<>'question' then return; end if;
+ q=mq.snapshot;
+ if m.mode='bot' then
+ select * into bp from public.bot_plans where match_id=mid and question_index=m.current_question_index;
+ if now()>=mq.started_at+make_interval(secs=>bp.response_ms::numeric/1000) then
+  select (value->>'id')::uuid into oid from jsonb_array_elements(q->'options') where ((value->>'id'=q->>'correct_option_id')=bp.will_be_correct) order by random() limit 1;
+  insert into public.match_answers(match_id,question_index,user_id,option_id,is_correct,response_ms,points)
+  values(mid,m.current_question_index,m.player2_id,oid,bp.will_be_correct,bp.response_ms,case when m.rules_version=2 then sj_private.battle_score(bp.will_be_correct,bp.response_ms,(q->>'time_limit_seconds')::int) else sj_private.score(bp.will_be_correct,bp.response_ms,(q->>'time_limit_seconds')::int,
+  m.current_question_index=(select max(question_index) from public.match_questions where match_id=mid)) end) on conflict(match_id,question_index,user_id) do nothing;
+ end if;
+ end if;
+ select count(*) into n from public.match_answers where match_id=mid and question_index=m.current_question_index;
+ if n=2 or now()>mq.deadline_at+interval '500 milliseconds' then
+ update public.match_questions set revealed_at=now() where id=mq.id;
+ update public.matches set phase='result',next_tick_at=now()+interval '2 seconds' where id=mid;
+ perform sj_private.emit(mid,'question_result',jsonb_build_object('question_index',mq.question_index));
+ end if;
+end $$;
+create or replace function public.submit_answer(match_id uuid, question_index int, option_id uuid) returns jsonb language plpgsql security definer set search_path='' as $$
+declare uid uuid=sj_private.require_player(); m public.matches; mq public.match_questions; elapsed int; correct boolean; points numeric;
+begin
+ perform sj_private.rate_limit('answer',120);
+ select * into m from public.matches where id=match_id and (player1_id=uid or player2_id=uid) for update;
+ if not found then raise exception 'MATCH_NOT_FOUND' using errcode='42501'; end if;
+ if exists(select 1 from public.match_answers a where a.match_id=submit_answer.match_id and a.question_index=submit_answer.question_index and a.user_id=uid) then return jsonb_build_object('accepted',true); end if;
+ select * into mq from public.match_questions where match_questions.match_id=submit_answer.match_id and match_questions.question_index=submit_answer.question_index;
+ if m.status<>'in_progress' or m.phase<>'question' or m.current_question_index<>question_index or clock_timestamp()>mq.deadline_at+interval '500 milliseconds' then raise exception 'TIME_UP'; end if;
+ if not exists(select 1 from jsonb_array_elements(mq.snapshot->'options') where value->>'id'=option_id::text) then raise exception 'INVALID_OPTION'; end if;
+ elapsed=greatest(0,floor(extract(epoch from(clock_timestamp()-mq.started_at))*1000)::int);
+ correct=option_id::text=mq.snapshot->>'correct_option_id';
+ points=case when m.rules_version=2 then sj_private.battle_score(correct,elapsed,(mq.snapshot->>'time_limit_seconds')::int) else sj_private.score(correct,elapsed,(mq.snapshot->>'time_limit_seconds')::int,question_index=(select max(q.question_index) from public.match_questions q where q.match_id=submit_answer.match_id)) end;
+ insert into public.match_answers(match_id,question_index,user_id,option_id,is_correct,response_ms,points) values(match_id,question_index,uid,option_id,correct,elapsed,points);
+ perform sj_private.emit(match_id,'opponent_answered',jsonb_build_object('user_id',uid,'question_index',question_index));
+ perform sj_private.tick_match(match_id);
+ return jsonb_build_object('accepted',true);
+end $$;
+create or replace function sj_private.finalize_match(mid uuid, forced_winner uuid default null, abandoned boolean default false) returns void language plpgsql security definer set search_path='' as $$
+declare m public.matches; p record; winner uuid; s1 numeric; s2 numeric; t1 bigint; t2 bigint; actual numeric; expected numeric; delta int; reward int; ncorrect int;
+begin
+ select * into m from public.matches where id=mid for update;
+ if m.status in ('completed','abandoned') then return; end if;
+ if abandoned then update public.matches set status='abandoned',phase='finished',ended_at=now() where id=mid; return; end if;
+ select coalesce(sum(points),0),coalesce(sum(response_ms) filter(where is_correct),0) into s1,t1 from public.match_answers where match_id=mid and user_id=m.player1_id;
+ select coalesce(sum(points),0),coalesce(sum(response_ms) filter(where is_correct),0) into s2,t2 from public.match_answers where match_id=mid and user_id=m.player2_id;
+ winner=coalesce(forced_winner,case when s1>s2 or (s1=s2 and t1<t2) then m.player1_id when s2>s1 or (s1=s2 and t2<t1) then m.player2_id else null end);
+ for p in select mp.*,pr.is_bot from public.match_players mp join public.profiles pr on pr.id=mp.user_id where match_id=mid order by mp.user_id loop
+ actual=case when winner is null then .5 when winner=p.user_id then 1 else 0 end;
+ expected=1/(1+power(10::numeric,((select rating_before from public.match_players where match_id=mid and user_id<>p.user_id)-p.rating_before)::numeric/400));
+ delta=round(32*(actual-expected)*case when m.mode='bot' then .5 else 1 end)::int;
+ select count(*) into ncorrect from public.match_answers where match_id=mid and user_id=p.user_id and is_correct;
+ reward=(case actual when 1 then 50 when .5 then 30 else 20 end)+5*ncorrect;
+ update public.match_players set score=case when p.user_id=m.player1_id then s1 else s2 end,
+ rating_after=greatest(0,p.rating_before+delta),xp_gained=reward,result=case actual when 1 then 'win' when .5 then 'draw' else 'loss' end where id=p.id;
+ if not p.is_bot then
+ update public.profiles set rating=greatest(0,rating+delta),xp=xp+reward,level=1+(xp+reward)/100 where id=p.user_id;
+ insert into public.user_category_stats(user_id,category_id,played,correct,total_time_ms)
+ select p.user_id,(mq.snapshot->>'category_id')::uuid,count(*),count(*) filter(where a.is_correct),coalesce(sum(a.response_ms),0)
+ from public.match_questions mq left join public.match_answers a on a.match_id=mq.match_id and a.question_index=mq.question_index and a.user_id=p.user_id
+ where mq.match_id=mid group by mq.snapshot->>'category_id'
+ on conflict(user_id,category_id) do update set played=user_category_stats.played+excluded.played,correct=user_category_stats.correct+excluded.correct,total_time_ms=user_category_stats.total_time_ms+excluded.total_time_ms;
+ end if;
+ end loop;
+ update public.matches set status='completed',phase='finished',winner_id=winner,ended_at=now() where id=mid;
+ perform sj_private.emit(mid,'match_end',jsonb_build_object('match_id',mid));
+end $$;
+create or replace function sj_private.match_player_report(mid uuid, participant uuid) returns jsonb
+language sql stable security definer set search_path='' as $$
+ select jsonb_build_object('id',p.id,'full_name',p.full_name,'is_bot',p.is_bot,
+ 'avatar_url',case when p.avatar_url like 'preset:%' or p.avatar_url like 'photo:%' then p.avatar_url end,
+ 'score',mp.score,'rating_before',mp.rating_before,'rating_after',mp.rating_after,
+ 'rating_change',coalesce(mp.rating_after,mp.rating_before)-mp.rating_before,
+ 'xp_gained',mp.xp_gained,'result',mp.result,
+ 'answered',a.answered,'correct',a.correct,'wrong',a.wrong,'unanswered',q.played-a.answered,
+ 'accuracy',case when q.played=0 then 0 else round(100.0*a.correct/q.played,1) end,
+ 'avg_response_ms',a.avg_response_ms,'avg_correct_response_ms',a.avg_correct_response_ms,
+ 'fastest_correct_ms',a.fastest_correct_ms,'total_response_ms',a.total_response_ms,
+ 'base_points',a.base_points,'speed_bonus',mp.score-a.base_points)
+ from public.match_players mp join public.profiles p on p.id=mp.user_id
+ cross join lateral(select count(*)::int played from public.match_questions mq where mq.match_id=mid and mq.started_at is not null) q
+ cross join lateral(select count(*)::int answered,count(*) filter(where ans.is_correct)::int correct,
+ count(*) filter(where not ans.is_correct)::int wrong,
+ round(avg(ans.response_ms))::int avg_response_ms,
+ round(avg(ans.response_ms) filter(where ans.is_correct))::int avg_correct_response_ms,
+ min(ans.response_ms) filter(where ans.is_correct) fastest_correct_ms,
+ coalesce(sum(ans.response_ms),0) total_response_ms,
+ coalesce(sum(case when ans.is_correct then case when (select rules_version from public.matches where id=mid)=2 then 2 else 10*case when ans.question_index=(select max(x.question_index) from public.match_questions x where x.match_id=mid) then 2 else 1 end end else 0 end),0)::int base_points
+ from public.match_answers ans join public.match_questions mq on mq.match_id=ans.match_id and mq.question_index=ans.question_index
+ where ans.match_id=mid and ans.user_id=participant and mq.started_at is not null) a
+ where mp.match_id=mid and mp.user_id=participant
+$$;
+create or replace function public.get_match_review(match_id uuid) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare uid uuid=sj_private.require_player(); m public.matches; opponent uuid; questions jsonb;
+begin
+ select * into m from public.matches where id=match_id and status='completed' and (player1_id=uid or player2_id=uid);
+ if not found then raise exception 'REVIEW_UNAVAILABLE' using errcode='42501'; end if;
+ opponent=case when m.player1_id=uid then m.player2_id else m.player1_id end;
+ select coalesce(jsonb_agg(q.snapshot||jsonb_build_object(
+ 'question_index',q.question_index,'started_at',q.started_at,'deadline_at',q.deadline_at,
+ 'category_name',(select name from public.categories where id=(q.snapshot->>'category_id')::uuid),
+ 'selected_option_id',a.option_id,'is_correct',coalesce(a.is_correct,false),'points',coalesce(a.points,0),
+ 'response_ms',a.response_ms,'opponent_option_id',b.option_id,'opponent_is_correct',coalesce(b.is_correct,false),
+ 'opponent_points',coalesce(b.points,0),'opponent_response_ms',b.response_ms,
+ 'multiplier',case when m.rules_version=2 then 1 when q.question_index=(select max(x.question_index) from public.match_questions x where x.match_id=m.id) then 2 else 1 end
+ ) order by q.question_index),'[]'::jsonb) into questions
+ from public.match_questions q
+ left join public.match_answers a on a.match_id=q.match_id and a.question_index=q.question_index and a.user_id=uid
+ left join public.match_answers b on b.match_id=q.match_id and b.question_index=q.question_index and b.user_id=opponent
+ where q.match_id=m.id and q.started_at is not null;
+ return jsonb_build_object('match_id',m.id,'mode',m.mode,'category_id',m.category_id,
+ 'question_count',(select count(*) from public.match_questions where match_questions.match_id=m.id),
+ 'rounds_played',jsonb_array_length(questions),'duration_ms',greatest(0,round(extract(epoch from(m.ended_at-m.started_at))*1000)),
+ 'completed_at',m.ended_at,'players',jsonb_build_array(sj_private.match_player_report(m.id,uid),sj_private.match_player_report(m.id,opponent)),
+ 'label_bots',coalesce((select value from public.app_settings where key='label_bots'),'true'::jsonb),
+ 'questions',questions);
+end $$;
+create or replace function sj_private.option_integrity() returns trigger language plpgsql security definer set search_path='' as $$
+declare qid uuid; n int; correct int;
+begin
+ qid=case when TG_OP='DELETE' then old.question_id else new.question_id end;
+ if not exists(select 1 from public.questions where id=qid) then return null; end if;
+ select count(*),count(*) filter(where is_correct) into n,correct from public.question_options where question_id=qid;
+ if n <>4 or correct<>1 then raise exception 'QUESTION_NEEDS_FOUR_OPTIONS_AND_ONE_CORRECT'; end if;
+ return null;
+end $$;
+create or replace function sj_private.published_integrity() returns trigger language plpgsql security definer set search_path='' as $$
+begin
+ if new.status='published' and (select count(*) from public.question_options where question_id=new.id) <>4
+ then raise exception 'QUESTION_NEEDS_OPTIONS'; end if; return null;
+end $$;
+create or replace function public.admin_save_question(payload jsonb) returns uuid language plpgsql security definer set search_path='' as $$
+declare qid uuid=coalesce((payload->>'id')::uuid,gen_random_uuid()); before_data jsonb; opt jsonb; idx int=0; n int;
+begin
+ perform sj_private.require_admin('editor');
+ select to_jsonb(q) into before_data from public.questions q where id=qid for update;
+ if exists(select 1 from public.match_questions where question_id=qid) or exists(select 1 from public.daily_challenge_questions where question_id=qid)
+ then raise exception 'QUESTION_ALREADY_USED_DUPLICATE_INSTEAD'; end if;
+ if jsonb_typeof(payload->'options')<>'array' or jsonb_array_length(payload->'options') <>4 then raise exception 'INVALID_OPTIONS'; end if;
+ select count(*) filter(where (value->>'is_correct')::boolean),count(distinct lower(trim(value->>'option_text')))
+ into idx,n from jsonb_array_elements(payload->'options');
+ if idx<>1 or n<>jsonb_array_length(payload->'options') or exists(select 1 from jsonb_array_elements(payload->'options') where length(trim(value->>'option_text'))=0)
+ then raise exception 'ONE_CORRECT_AND_UNIQUE_OPTIONS_REQUIRED'; end if;
+ insert into public.questions(id,category_id,subtopic_id,question_text,image_url,difficulty,time_limit_seconds,explanation,status,created_by)
+ values(qid,(payload->>'category_id')::uuid,(payload->>'subtopic_id')::uuid,trim(payload->>'question_text'),payload->>'image_url',payload->>'difficulty',
+ (payload->>'time_limit_seconds')::int,payload->>'explanation',payload->>'status',auth.uid())
+ on conflict(id) do update set category_id=excluded.category_id,subtopic_id=excluded.subtopic_id,question_text=excluded.question_text,image_url=excluded.image_url,
+ difficulty=excluded.difficulty,time_limit_seconds=excluded.time_limit_seconds,explanation=excluded.explanation,status=excluded.status;
+ delete from public.question_options where question_id=qid;
+ idx=0;
+ for opt in select value from jsonb_array_elements(payload->'options') loop
+ insert into public.question_options(question_id,option_text,image_url,is_correct,sort_order)
+ values(qid,trim(opt->>'option_text'),opt->>'image_url',(opt->>'is_correct')::boolean,idx); idx=idx+1;
+ end loop;
+ perform sj_private.audit('save','questions',qid::text,jsonb_build_object('before',before_data,'after',payload));
+ return qid;
+end $$;
+create or replace function public.admin_schedule_daily(day date,title text,question_ids uuid[] default null) returns uuid language plpgsql security definer set search_path='' as $$
+declare cid uuid; qid uuid; idx int=0;
+begin
+ perform sj_private.require_admin('editor');
+ perform pg_advisory_xact_lock(hashtext('sj_daily_'||day::text));
+ if day<(now() at time zone 'Asia/Kolkata')::date or day>(now() at time zone 'Asia/Kolkata')::date+365 or length(trim(title)) not between 2 and 100 then raise exception 'INVALID_CHALLENGE'; end if;
+ select id into cid from public.daily_challenges where challenge_date=day for update;
+ if exists(select 1 from public.daily_attempts where challenge_id=cid) then raise exception 'CHALLENGE_ALREADY_STARTED'; end if;
+ if cid is null then cid=sj_private.generate_daily(day); end if;
+ if question_ids is not null then
+ if cardinality(question_ids) <>10 or (select count(distinct id) from public.questions where id=any(question_ids) and status='published')<>cardinality(question_ids) then raise exception 'INVALID_QUESTIONS'; end if;
+ delete from public.daily_challenge_questions where challenge_id=cid;
+ foreach qid in array question_ids loop
+ insert into public.daily_challenge_questions(challenge_id,question_index,question_id,snapshot) values(cid,idx,qid,sj_private.question_snapshot(qid));idx=idx+1;
+ end loop;
+ end if;
+ update public.daily_challenges set title=trim(admin_schedule_daily.title),status='scheduled',created_by=auth.uid() where id=cid;
+ perform sj_private.audit('schedule','daily_challenges',cid::text,jsonb_build_object('day',day,'title',title));return cid;
+end $$;
+
+revoke all on all functions in schema sj_private from public,anon,authenticated;
+revoke all on sj_private.bot_names from public,anon,authenticated;
+
+
+-- 202611090015_cloud_data.sql
+
+insert into public.categories(id,name,slug,icon,color_hex,sort_order) values ('668395b5-5411-5b0b-99a5-5efa80c18faf','Quantitative Aptitude','quant','calculate','#376BD6',0) on conflict(id) do nothing;
+insert into public.categories(id,name,slug,icon,color_hex,sort_order) values ('d2c9217b-d3a7-5a4a-9815-c33704a25aff','English','english','translate','#087E83',1) on conflict(id) do nothing;
+insert into public.categories(id,name,slug,icon,color_hex,sort_order) values ('09f88e78-88be-547c-9eb8-ef644b66db02','Reasoning','reasoning','psychology','#8051C5',2) on conflict(id) do nothing;
+insert into public.categories(id,name,slug,icon,color_hex,sort_order) values ('b53dbb09-44ec-5cfa-aea5-9b5d62fcaa65','General Awareness','general-awareness','public','#B66A13',3) on conflict(id) do nothing;
+insert into public.subtopics(id,category_id,name,topic_group) select '0c965966-8a76-5cac-bc5d-0fac4c740c9d'::uuid,id,'Percentages','Arithmetic' from public.categories where slug='quant' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select 'd8a04e6b-647a-5cfa-b2f2-2fbd91ef400d'::uuid,id,'Profit & Loss','Arithmetic' from public.categories where slug='quant' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Ratio','Arithmetic' from public.categories where slug='quant' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select '378d3bba-e539-57d4-9450-68034b1df9f7'::uuid,id,'Time & Work','Arithmetic' from public.categories where slug='quant' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Speed & Distance','Arithmetic' from public.categories where slug='quant' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'SI/CI','Arithmetic' from public.categories where slug='quant' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Averages','Arithmetic' from public.categories where slug='quant' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Number Systems','Arithmetic' from public.categories where slug='quant' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Algebra','Advanced Maths' from public.categories where slug='quant' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Geometry','Advanced Maths' from public.categories where slug='quant' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Trigonometry','Advanced Maths' from public.categories where slug='quant' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Mensuration','Advanced Maths' from public.categories where slug='quant' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Data Interpretation','Advanced Maths' from public.categories where slug='quant' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Coding-Decoding','Verbal' from public.categories where slug='reasoning' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Blood Relations','Verbal' from public.categories where slug='reasoning' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Direction','Verbal' from public.categories where slug='reasoning' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Syllogisms','Verbal' from public.categories where slug='reasoning' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Analogies','Verbal' from public.categories where slug='reasoning' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Series','Verbal' from public.categories where slug='reasoning' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Mirror Images','Non-Verbal' from public.categories where slug='reasoning' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Paper Folding','Non-Verbal' from public.categories where slug='reasoning' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Puzzles','Non-Verbal' from public.categories where slug='reasoning' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Seating Arrangements','Non-Verbal' from public.categories where slug='reasoning' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Static GK','General Awareness' from public.categories where slug='general-awareness' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'History','General Awareness' from public.categories where slug='general-awareness' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Polity','General Awareness' from public.categories where slug='general-awareness' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select 'c48ff9f3-c397-56fe-8ffd-e8af52ca6db0'::uuid,id,'Geography','General Awareness' from public.categories where slug='general-awareness' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Economics','General Awareness' from public.categories where slug='general-awareness' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Computer Awareness','General Awareness' from public.categories where slug='general-awareness' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Current Affairs','General Awareness' from public.categories where slug='general-awareness' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Physics','General Science' from public.categories where slug='general-awareness' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Chemistry','General Science' from public.categories where slug='general-awareness' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Biology','General Science' from public.categories where slug='general-awareness' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Grammar rules','English' from public.categories where slug='english' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select '15ce5c00-e6c7-57c7-90b8-666779e61e99'::uuid,id,'Vocabulary','English' from public.categories where slug='english' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Idioms & Phrases','English' from public.categories where slug='english' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'One Word Substitution','English' from public.categories where slug='english' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Synonyms/Antonyms','English' from public.categories where slug='english' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Cloze Test','English' from public.categories where slug='english' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+insert into public.subtopics(id,category_id,name,topic_group) select gen_random_uuid(),id,'Reading Comprehension','English' from public.categories where slug='english' on conflict(category_id,name) do update set topic_group=excluded.topic_group;
+
+create table public.user_preferences (
+ user_id uuid primary key references public.profiles(id) on delete cascade,
+ settings jsonb not null default '{}' check(jsonb_typeof(settings)='object'),
+ updated_at timestamptz not null default now()
+);
+alter table public.user_preferences enable row level security;
+create policy own_preferences on public.user_preferences for select to authenticated using(user_id=auth.uid());
+grant select on public.user_preferences to authenticated;
+create function public.save_preferences(patch jsonb) returns jsonb language plpgsql security definer set search_path='' as $$
+declare uid uuid=auth.uid(); result jsonb; k text;
+begin
+ if uid is null or not exists(select 1 from public.profiles where id=uid and not is_banned) then raise exception 'AUTH_REQUIRED'; end if;
+ if jsonb_typeof(patch) is distinct from 'object' then raise exception 'INVALID_SETTINGS'; end if;
+ for k in select jsonb_object_keys(patch) loop
+ if k in ('haptics','sound_effects','music_enabled','notifications') then
+ if jsonb_typeof(patch->k)<>'boolean' then raise exception 'INVALID_SETTINGS'; end if;
+ elsif k in ('effects_volume','music_volume') then
+ if jsonb_typeof(patch->k)<>'number' or (patch->>k)::numeric not between 0 and 1 then raise exception 'INVALID_SETTINGS'; end if;
+ elsif k='theme' then
+ if patch->>k not in ('0','1','2') then raise exception 'INVALID_SETTINGS'; end if;
+ elsif k='category' then
+ if patch->>k<>'mixed' and not exists(select 1 from public.categories where id::text=patch->>k and is_active) then raise exception 'INVALID_SETTINGS'; end if;
+ else raise exception 'UNKNOWN_SETTING'; end if;
+ end loop;
+ insert into public.user_preferences(user_id,settings) values(uid,patch) on conflict(user_id)
+ do update set settings=user_preferences.settings||excluded.settings,updated_at=clock_timestamp() returning settings into result;
+ return result;
+end $$;
+revoke all on function public.save_preferences(jsonb) from public,anon;
+grant execute on function public.save_preferences(jsonb) to authenticated;
+
+-- Lightweight invalidations: never broadcast question text, answers, or personal data.
+create function sj_private.notify_data_change() returns trigger language plpgsql security definer set search_path='' as $$
+declare row_data jsonb=case when TG_OP='DELETE' then to_jsonb(old) else to_jsonb(new) end; owner text;
+begin
+ if TG_TABLE_NAME='match_players' and TG_OP='UPDATE' and (to_jsonb(old)-'heartbeat_at'-'updated_at')=(to_jsonb(new)-'heartbeat_at'-'updated_at') then return null; end if;
+ if TG_TABLE_NAME in ('categories','subtopics','app_settings','battle_rounds','daily_challenges') then
+ perform realtime.send(jsonb_build_object('table',TG_TABLE_NAME),'changed','data:catalog',true);
+ elsif TG_TABLE_NAME='admin_users' then
+ select id::text into owner from public.profiles where email=row_data->>'email';
+ if owner is not null then perform realtime.send(jsonb_build_object('table',TG_TABLE_NAME),'changed','data:user:'||owner,true); end if;
+ elsif TG_TABLE_NAME in ('profiles','user_preferences','practice_attempts','daily_attempts','match_players') then
+ owner=case when TG_TABLE_NAME='profiles' then row_data->>'id' else row_data->>'user_id' end;
+ perform realtime.send(jsonb_build_object('table',TG_TABLE_NAME),'changed','data:user:'||owner,true);
+ end if;
+ perform realtime.send(jsonb_build_object('table',TG_TABLE_NAME),'changed','data:admin',true);
+ return null;
+end $$;
+do $$ declare t text; begin
+ foreach t in array array['categories','subtopics','app_settings','battle_rounds','profiles','user_preferences','practice_attempts','daily_attempts','match_players','questions','admin_users'] loop
+ execute format('create trigger data_changed after insert or update or delete on public.%I for each row execute function sj_private.notify_data_change()',t);
+ end loop;
+end $$;
+create policy data_receive on realtime.messages for select to authenticated using(
+ realtime.topic()='data:catalog' or realtime.topic()='data:user:'||auth.uid()::text or (realtime.topic()='data:admin' and public.is_admin())
+);
+
+create function public.get_practice_history(before_at timestamptz default null, before_id uuid default null) returns jsonb
+language plpgsql stable security definer set search_path='' as $$
+declare uid uuid=sj_private.require_player();
+begin
+ return jsonb_build_object('attempts',(select coalesce(jsonb_agg(r order by r.started_at desc,r.id desc),'[]') from (
+ select id,score,correct_count,started_at,jsonb_array_length(questions) question_count from public.practice_attempts
+ where user_id=uid and completed_at is not null and (before_at is null or (started_at,id)<(before_at,before_id))
+ order by started_at desc,id desc limit 30) r));
+end $$;
+create function public.get_practice_review(attempt_id uuid) returns jsonb language plpgsql stable security definer set search_path='' as $$
+declare uid uuid=sj_private.require_player(); a public.practice_attempts;
+begin
+ select * into a from public.practice_attempts where id=attempt_id and user_id=uid and completed_at is not null;
+ if not found then raise exception 'REVIEW_UNAVAILABLE'; end if;
+ return jsonb_build_object('questions',(select jsonb_agg(q||coalesce(a.answers->(i::int-1),'{}') order by i) from jsonb_array_elements(a.questions) with ordinality t(q,i)));
+end $$;
+revoke all on function public.get_practice_history(timestamptz,uuid),public.get_practice_review(uuid) from public,anon;
+grant execute on function public.get_practice_history(timestamptz,uuid),public.get_practice_review(uuid) to authenticated;
+drop function public.start_practice(uuid,uuid,boolean);
+create or replace function public.start_practice(category_id uuid default null, subtopic_id uuid default null, timed boolean default true, exam_filter text default null, difficulty_filter text default null, question_count int default 10) returns jsonb language plpgsql security definer set search_path='' as $$
+declare uid uuid=sj_private.require_player(); aid uuid; qs jsonb;
+begin
+ perform sj_private.rate_limit('practice',15);
+ select jsonb_agg(sj_private.question_snapshot(qid) order by ord) into qs
+ from unnest(sj_private.pick_questions(question_count,category_id,subtopic_id,exam_filter,difficulty_filter)) with ordinality t(qid,ord);
+ insert into public.practice_attempts(user_id,timed,questions) values(uid,timed,qs) returning id into aid;
+ return jsonb_build_object('attempt_id',aid,'question_count',jsonb_array_length(qs),'question_index',0,
+ 'question',sj_private.safe_question(qs->0)||jsonb_build_object('deadline_at',case when timed then now()+make_interval(secs=>(qs->0->>'time_limit_seconds')::int) else null end));
+end $$;
+
+revoke all on function public.start_practice(uuid,uuid,boolean,text,text,int) from public,anon;
+grant execute on function public.start_practice(uuid,uuid,boolean,text,text,int) to authenticated;
+create or replace function public.admin_save_question(payload jsonb) returns uuid language plpgsql security definer set search_path='' as $$
+declare qid uuid=coalesce((payload->>'id')::uuid,gen_random_uuid()); before_data jsonb; opt jsonb; idx int=0; n int;
+begin
+ perform sj_private.require_admin('editor');
+ select to_jsonb(q) into before_data from public.questions q where id=qid for update;
+ if exists(select 1 from public.match_questions where question_id=qid) or exists(select 1 from public.daily_challenge_questions where question_id=qid)
+ then raise exception 'QUESTION_ALREADY_USED_DUPLICATE_INSTEAD'; end if;
+ if jsonb_typeof(payload->'options')<>'array' or jsonb_array_length(payload->'options') <>4 then raise exception 'INVALID_OPTIONS'; end if;
+ select count(*) filter(where (value->>'is_correct')::boolean),count(distinct lower(trim(value->>'option_text')))
+ into idx,n from jsonb_array_elements(payload->'options');
+ if idx<>1 or n<>jsonb_array_length(payload->'options') or exists(select 1 from jsonb_array_elements(payload->'options') where length(trim(value->>'option_text'))=0)
+ then raise exception 'ONE_CORRECT_AND_UNIQUE_OPTIONS_REQUIRED'; end if;
+ insert into public.questions(id,category_id,subtopic_id,question_text,image_url,difficulty,time_limit_seconds,explanation,status,created_by)
+ values(qid,(payload->>'category_id')::uuid,(payload->>'subtopic_id')::uuid,trim(payload->>'question_text'),payload->>'image_url',payload->>'difficulty',
+ (payload->>'time_limit_seconds')::int,payload->>'explanation',payload->>'status',auth.uid())
+ on conflict(id) do update set category_id=excluded.category_id,subtopic_id=excluded.subtopic_id,question_text=excluded.question_text,image_url=excluded.image_url,
+ difficulty=excluded.difficulty,time_limit_seconds=excluded.time_limit_seconds,explanation=excluded.explanation,status=excluded.status;
+ delete from public.question_options where question_id=qid;
+ idx=0;
+ for opt in select value from jsonb_array_elements(payload->'options') loop
+ insert into public.question_options(question_id,option_text,image_url,is_correct,sort_order)
+ values(qid,trim(opt->>'option_text'),opt->>'image_url',(opt->>'is_correct')::boolean,idx); idx=idx+1;
+ end loop;
+ update public.questions set exam=nullif(trim(payload->>'exam'),'') where id=qid;
+ perform sj_private.audit('save','questions',qid::text,jsonb_build_object('before',before_data,'after',payload));
+ return qid;
+end $$;
+create or replace function public.admin_import_questions(payload jsonb) returns jsonb language plpgsql security definer set search_path='' as $$
+declare item jsonb; row_num int=0; category uuid; topic uuid; topic_name text; choice text; difficulty text; opts jsonb;
+ fingerprint text=md5(payload::text); previous int; column_name text;
+begin
+ perform sj_private.require_admin('editor');
+ if jsonb_typeof(payload->'questions') is distinct from 'array' then raise exception 'Expected a questions array'; end if;
+ if jsonb_array_length(payload->'questions') not between 1 and 500 then raise exception 'Use 1–500 questions per file'; end if;
+ perform pg_advisory_xact_lock(hashtext('sj_question_import'));
+ select item_count into previous from sj_private.question_imports where batch_hash=fingerprint;
+ if found then return jsonb_build_object('imported',previous,'already_imported',true); end if;
+ for item in select value from jsonb_array_elements(payload->'questions') loop
+   row_num=row_num+1;
+   foreach column_name in array array['question','option_a','option_b','option_c','option_d','correct_answer','subject','difficulty','explanation'] loop
+     if jsonb_typeof(item->column_name) is distinct from 'string' or trim(item->>column_name)='' then
+       raise exception 'Question %: supply %',row_num,column_name;
+     end if;
+   end loop;
+   choice=upper(trim(item->>'correct_answer')); difficulty=lower(trim(item->>'difficulty'));
+   if choice not in ('A','B','C','D') or difficulty not in ('easy','medium','hard') or length(trim(item->>'question'))<4 then
+     raise exception 'Question %: check question text, correct_answer (A–D) and difficulty',row_num;
+   end if;
+   select c.id into category from public.categories c where lower(trim(item->>'subject')) in (lower(c.name),lower(c.slug)) order by c.sort_order,c.id limit 1;
+   if category is null then raise exception 'Question %: unknown subject "%". Add the category first',row_num,item->>'subject'; end if;
+   topic=null; topic_name=nullif(trim(item->>'topic'),'');
+   if topic_name is not null then
+     select s.id into topic from public.subtopics s where s.category_id=category and lower(s.name)=lower(topic_name) order by s.id limit 1;
+     if topic is null then insert into public.subtopics(category_id,name) values(category,topic_name) on conflict(category_id,name) do update set name=excluded.name returning id into topic; end if;
+   end if;
+   select jsonb_agg(jsonb_build_object('option_text',trim(item->>('option_'||l)),'is_correct',upper(l)=choice) order by l) into opts from unnest(array['a','b','c','d']) l;
+   if (select count(distinct lower(o->>'option_text')) from jsonb_array_elements(opts) o)<>4 then raise exception 'Question %: options must be different',row_num; end if;
+   perform public.admin_save_question(jsonb_build_object('category_id',category,'subtopic_id',topic,'question_text',trim(item->>'question'),
+      'difficulty',difficulty,'time_limit_seconds',coalesce((item->>'time_limit_seconds')::int,15),'explanation',trim(item->>'explanation'),'status','draft','exam',item->>'exam','options',opts));
+ end loop;
+ insert into sj_private.question_imports values(fingerprint,row_num);
+ return jsonb_build_object('imported',row_num,'already_imported',false);
+end $$;
+revoke all on all functions in schema sj_private from public,anon,authenticated;
+
+
+-- 202611090016_rule_guards.sql
+
+create or replace function public.admin_save_setting(key text,value jsonb) returns void language plpgsql security definer set search_path='' as $$
+begin
+ perform sj_private.require_admin('super_admin');
+ if key='questions_per_match' then if (value#>>'{}')::int <>4 then raise exception 'INVALID_SETTING'; end if;
+ elsif key='search_timeout_seconds' then if (value#>>'{}')::int <>10 then raise exception 'INVALID_SETTING'; end if;
+ elsif key in ('label_bots','maintenance_mode') then if jsonb_typeof(value)<>'boolean' then raise exception 'INVALID_SETTING'; end if;
+ elsif key='min_app_version' then if jsonb_typeof(value)<>'string' then raise exception 'INVALID_SETTING'; end if;
+ else raise exception 'INVALID_SETTING'; end if;
+ insert into public.app_settings as s(key,value) values(key,value) on conflict on constraint app_settings_pkey do update set value=excluded.value;
+ perform sj_private.audit('setting','app_settings',key,value);
+end $$;
+create or replace function public.get_match_state(match_id uuid) returns jsonb language plpgsql security definer set search_path='' as $$
+declare uid uuid=sj_private.require_player(); m public.matches; mq public.match_questions;
+begin
+ select * into m from public.matches where id=match_id and (player1_id=uid or player2_id=uid);
+ if not found then raise exception 'MATCH_NOT_FOUND' using errcode='42501'; end if;
+ update public.match_players set heartbeat_at=now() where match_players.match_id=get_match_state.match_id and user_id=uid;
+ select * into mq from public.match_questions where match_questions.match_id=get_match_state.match_id and question_index=m.current_question_index;
+ return jsonb_build_object('match_id',m.id,'status',m.status,'rules_version',m.rules_version,'phase',m.phase,'mode',m.mode,'question_index',m.current_question_index,
+ 'question_count',(select count(*) from public.match_questions q where q.match_id=m.id),'server_now',clock_timestamp(),'starts_at',m.started_at,
+ 'label_bots',coalesce((select value from public.app_settings where key='label_bots'),'true'::jsonb),
+ 'players',(select jsonb_agg(jsonb_build_object('id',p.id,'full_name',p.full_name,'level',p.level,'avatar_url',case when p.avatar_url like 'preset:%' or p.avatar_url like 'photo:%' or p.avatar_url like 'color:%' then p.avatar_url end,'rating',mp.rating_before,'score',coalesce((select sum(points) from public.match_answers a join public.match_questions q on q.match_id=a.match_id and q.question_index=a.question_index where a.match_id=m.id and a.user_id=p.id and q.revealed_at is not null),0),
+ 'rating_after',mp.rating_after,'xp_gained',mp.xp_gained,'result',mp.result,'connected',p.is_bot or mp.heartbeat_at>now()-interval '5 seconds')) from public.match_players mp join public.profiles p on p.id=mp.user_id where mp.match_id=m.id),
+ 'question',case when mq.started_at is null then null else sj_private.safe_question(mq.snapshot)||jsonb_build_object('started_at',mq.started_at,'deadline_at',mq.deadline_at) end,
+ 'answered',(select coalesce(jsonb_agg(a.user_id),'[]') from public.match_answers a where a.match_id=m.id and a.question_index=m.current_question_index),
+ 'result',case when mq.revealed_at is not null then jsonb_build_object('correct_option_id',mq.snapshot->>'correct_option_id','explanation',mq.snapshot->>'explanation',
+ 'answers',(select coalesce(jsonb_agg(jsonb_build_object('user_id',a.user_id,'option_id',a.option_id,'points',a.points)),'[]') from public.match_answers a where a.match_id=m.id and a.question_index=m.current_question_index)) else null end);
+end $$;
+create or replace function sj_private.match_player_report(mid uuid, participant uuid) returns jsonb
+language sql stable security definer set search_path='' as $$
+ select jsonb_build_object('id',p.id,'full_name',p.full_name,'is_bot',p.is_bot,
+ 'avatar_url',case when p.avatar_url like 'preset:%' or p.avatar_url like 'photo:%' or p.avatar_url like 'color:%' then p.avatar_url end,
+ 'score',mp.score,'rating_before',mp.rating_before,'rating_after',mp.rating_after,
+ 'rating_change',coalesce(mp.rating_after,mp.rating_before)-mp.rating_before,
+ 'xp_gained',mp.xp_gained,'result',mp.result,
+ 'answered',a.answered,'correct',a.correct,'wrong',a.wrong,'unanswered',q.played-a.answered,
+ 'accuracy',case when q.played=0 then 0 else round(100.0*a.correct/q.played,1) end,
+ 'avg_response_ms',a.avg_response_ms,'avg_correct_response_ms',a.avg_correct_response_ms,
+ 'fastest_correct_ms',a.fastest_correct_ms,'total_response_ms',a.total_response_ms,
+ 'base_points',a.base_points,'speed_bonus',mp.score-a.base_points)
+ from public.match_players mp join public.profiles p on p.id=mp.user_id
+ cross join lateral(select count(*)::int played from public.match_questions mq where mq.match_id=mid and mq.started_at is not null) q
+ cross join lateral(select count(*)::int answered,count(*) filter(where ans.is_correct)::int correct,
+ count(*) filter(where not ans.is_correct)::int wrong,
+ round(avg(ans.response_ms))::int avg_response_ms,
+ round(avg(ans.response_ms) filter(where ans.is_correct))::int avg_correct_response_ms,
+ min(ans.response_ms) filter(where ans.is_correct) fastest_correct_ms,
+ coalesce(sum(ans.response_ms),0) total_response_ms,
+ coalesce(sum(case when ans.is_correct then case when (select rules_version from public.matches where id=mid)=2 then 2 else 10*case when ans.question_index=(select max(x.question_index) from public.match_questions x where x.match_id=mid) then 2 else 1 end end else 0 end),0)::int base_points
+ from public.match_answers ans join public.match_questions mq on mq.match_id=ans.match_id and mq.question_index=ans.question_index
+ where ans.match_id=mid and ans.user_id=participant and mq.started_at is not null) a
+ where mp.match_id=mid and mp.user_id=participant
+$$;
+create or replace function public.admin_save_question(payload jsonb) returns uuid language plpgsql security definer set search_path='' as $$
+declare qid uuid=coalesce((payload->>'id')::uuid,gen_random_uuid()); before_data jsonb; opt jsonb; idx int=0; n int; topic uuid; topic_name text;
+begin
+ perform sj_private.require_admin('editor');
+ select to_jsonb(q) into before_data from public.questions q where id=qid for update;
+ if exists(select 1 from public.match_questions where question_id=qid) or exists(select 1 from public.daily_challenge_questions where question_id=qid)
+ then raise exception 'QUESTION_ALREADY_USED_DUPLICATE_INSTEAD'; end if;
+ if jsonb_typeof(payload->'options')<>'array' or jsonb_array_length(payload->'options') <>4 then raise exception 'INVALID_OPTIONS'; end if;
+ select count(*) filter(where (value->>'is_correct')::boolean),count(distinct lower(trim(value->>'option_text')))
+ into idx,n from jsonb_array_elements(payload->'options');
+ if idx<>1 or n<>jsonb_array_length(payload->'options') or exists(select 1 from jsonb_array_elements(payload->'options') where length(trim(value->>'option_text'))=0)
+ then raise exception 'ONE_CORRECT_AND_UNIQUE_OPTIONS_REQUIRED'; end if;
+ topic=(payload->>'subtopic_id')::uuid;
+ topic_name=nullif(trim(payload->>'topic_name'),'');
+ if topic is null and topic_name is not null then
+ select id into topic from public.subtopics where category_id=(payload->>'category_id')::uuid and lower(name)=lower(topic_name) limit 1;
+ if topic is null then insert into public.subtopics(category_id,name) values((payload->>'category_id')::uuid,topic_name) on conflict(category_id,name) do update set name=excluded.name returning id into topic; end if;
+ end if;
+ if topic is null or length(trim(coalesce(payload->>'explanation','')))=0 then raise exception 'TOPIC_AND_EXPLANATION_REQUIRED'; end if;
+ insert into public.questions(id,category_id,subtopic_id,question_text,image_url,difficulty,time_limit_seconds,explanation,status,created_by)
+ values(qid,(payload->>'category_id')::uuid,topic,trim(payload->>'question_text'),payload->>'image_url',payload->>'difficulty',
+ (payload->>'time_limit_seconds')::int,payload->>'explanation',payload->>'status',auth.uid())
+ on conflict(id) do update set category_id=excluded.category_id,subtopic_id=excluded.subtopic_id,question_text=excluded.question_text,image_url=excluded.image_url,
+ difficulty=excluded.difficulty,time_limit_seconds=excluded.time_limit_seconds,explanation=excluded.explanation,status=excluded.status;
+ delete from public.question_options where question_id=qid;
+ idx=0;
+ for opt in select value from jsonb_array_elements(payload->'options') loop
+ insert into public.question_options(question_id,option_text,image_url,is_correct,sort_order)
+ values(qid,trim(opt->>'option_text'),opt->>'image_url',(opt->>'is_correct')::boolean,idx); idx=idx+1;
+ end loop;
+ update public.questions set exam=nullif(trim(payload->>'exam'),'') where id=qid;
+ perform sj_private.audit('save','questions',qid::text,jsonb_build_object('before',before_data,'after',payload));
+ return qid;
+end $$;
+
+create function sj_private.notify_standings() returns trigger language plpgsql security definer set search_path='' as $$
+begin perform realtime.send('{}','standings','data:catalog',true); return null; end $$;
+create trigger standings_changed after update of rating,xp on public.profiles for each statement execute function sj_private.notify_standings();
+create trigger daily_standings_changed after update of completed_at on public.daily_attempts for each statement execute function sj_private.notify_standings();
+create trigger daily_catalog_changed after insert or update or delete on public.daily_challenges for each row execute function sj_private.notify_data_change();
+create index matches_player1_history on public.matches(player1_id,created_at desc,id);
+create index matches_player2_history on public.matches(player2_id,created_at desc,id);
+revoke all on all functions in schema sj_private from public,anon,authenticated;
+
+
+-- 202611090017_history_pages.sql
+
+create function public.get_history_page(before_at timestamptz default null, before_id uuid default null)
+returns jsonb language plpgsql stable security definer set search_path='' as $$
+declare uid uuid=sj_private.require_player();
+begin
+ if (before_at is null)<>(before_id is null) then raise exception 'INVALID_CURSOR'; end if;
+ return jsonb_build_object('rows',(select coalesce(jsonb_agg(r order by r.played_at desc,r.id desc),'[]') from (
+ select * from (
+  select m.id,'battle'::text mode,m.created_at played_at,mp.score,mp.result,
+   (select full_name from public.profiles where id=case when m.player1_id=uid then m.player2_id else m.player1_id end) title
+  from public.match_players mp join public.matches m on m.id=mp.match_id where mp.user_id=uid and m.status='completed'
+  union all
+  select p.id,'practice',p.started_at,p.score,null,'Practice' from public.practice_attempts p where p.user_id=uid and p.completed_at is not null
+  union all
+  select a.id,'daily',a.started_at,a.score,null,c.title from public.daily_attempts a join public.daily_challenges c on c.id=a.challenge_id
+  where a.user_id=uid and a.completed_at is not null
+ ) history where before_at is null or (played_at,id)<(before_at,before_id)
+ order by played_at desc,id desc limit 30) r));
+end $$;
+create function public.get_daily_review(attempt_id uuid) returns jsonb language plpgsql stable security definer set search_path='' as $$
+declare uid uuid=sj_private.require_player(); a public.daily_attempts;
+begin
+ select * into a from public.daily_attempts where id=attempt_id and user_id=uid and completed_at is not null;
+ if not found then raise exception 'REVIEW_UNAVAILABLE'; end if;
+ return jsonb_build_object('questions',(select jsonb_agg(q.snapshot||jsonb_build_object(
+ 'selected_option_id',r.option_id,'is_correct',coalesce(r.is_correct,false),'points',coalesce(r.points,0)) order by q.question_index)
+ from public.daily_challenge_questions q left join public.daily_attempt_answers r on r.attempt_id=a.id and r.question_index=q.question_index where q.challenge_id=a.challenge_id));
+end $$;
+revoke all on function public.get_history_page(timestamptz,uuid),public.get_daily_review(uuid) from public,anon;
+grant execute on function public.get_history_page(timestamptz,uuid),public.get_daily_review(uuid) to authenticated;
+
+
+-- 202611090018_live_bot_progress.sql
+
+-- Bot answers use the same private progress signal as human answers.
+-- Payload deliberately contains no option ID, correctness or points.
+create function sj_private.notify_bot_answer() returns trigger language plpgsql security definer set search_path='' as $$
+begin
+ if exists(select 1 from public.profiles where id=new.user_id and is_bot) then
+  perform sj_private.emit(new.match_id,'opponent_answered',jsonb_build_object('user_id',new.user_id,'question_index',new.question_index));
+ end if;
+ return null;
+end $$;
+create trigger bot_answered after insert on public.match_answers for each row execute function sj_private.notify_bot_answer();
+create function sj_private.erase_preferences() returns trigger language plpgsql security definer set search_path='' as $$
+begin
+ if new.deleted_at is not null and old.deleted_at is null then delete from public.user_preferences where user_id=new.id; end if;
+ return null;
+end $$;
+create trigger erased_preferences after update of deleted_at on public.profiles for each row execute function sj_private.erase_preferences();
+revoke all on function sj_private.notify_bot_answer(),sj_private.erase_preferences() from public,anon,authenticated;
 
 
 -- Seed

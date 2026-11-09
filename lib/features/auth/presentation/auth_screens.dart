@@ -221,15 +221,12 @@ class _LoginState extends ConsumerState<LoginScreen> {
                                   width: double.infinity,
                                   padding: const EdgeInsets.all(14),
                                   decoration: BoxDecoration(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .error
-                                        .withValues(alpha: 0.08),
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.error.withValues(alpha: 0.08),
                                     borderRadius: BorderRadius.circular(12),
                                     border: Border.all(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .error
+                                      color: Theme.of(context).colorScheme.error
                                           .withValues(alpha: 0.2),
                                     ),
                                   ),
@@ -237,8 +234,9 @@ class _LoginState extends ConsumerState<LoginScreen> {
                                     error!,
                                     textAlign: TextAlign.center,
                                     style: TextStyle(
-                                      color:
-                                          Theme.of(context).colorScheme.error,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.error,
                                       fontSize: 13,
                                     ),
                                   ),

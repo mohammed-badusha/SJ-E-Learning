@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:hive_ce_flutter/hive_flutter.dart';
 import '../../../core/theme.dart';
 import '../../../core/audio/audio_controller.dart';
 import '../../../shared/audio_controls.dart';
@@ -18,9 +17,13 @@ class QuizScreen extends ConsumerStatefulWidget {
     this.subtopic,
     this.mode = 'practice',
     this.timed = true,
+    this.exam,
+    this.difficulty,
+    this.questionCount = 10,
   });
   final String category, mode;
-  final String? subtopic;
+  final String? subtopic, exam, difficulty;
+  final int questionCount;
   final bool timed;
   @override
   ConsumerState<QuizScreen> createState() => _QuizState();
@@ -67,6 +70,9 @@ class _QuizState extends ConsumerState<QuizScreen> {
                       : widget.category,
                   'subtopic_id': widget.subtopic,
                   'timed': widget.timed,
+                  'exam_filter': widget.exam,
+                  'difficulty_filter': widget.difficulty,
+                  'question_count': widget.questionCount,
                 },
         );
         attempt = data['attempt_id'];
@@ -228,20 +234,7 @@ class _QuizState extends ConsumerState<QuizScreen> {
           return;
         }
       }
-      if (Hive.isBoxOpen('review')) {
-        await Hive.box('review').put(
-          '${repository.session.profile!.id}:${DateTime.now().millisecondsSinceEpoch}',
-          {
-            'score': score,
-            'correct': correct,
-            'count': count,
-            'mode': widget.mode,
-            'preview': repository.session.preview,
-            'questions': review,
-            'date': DateTime.now().toIso8601String(),
-          },
-        );
-      }
+
       unawaited(repository.session.refresh());
       audio.leaveGame(this);
       audio.play(

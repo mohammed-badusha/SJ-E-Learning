@@ -148,15 +148,15 @@ await test('Admin role changes, viewer restrictions and settings validation',asy
  await asUser(2,()=>q("select public.admin_set_role('student1@example.com','viewer',true)"));
  assert.equal((await asUser(1,()=>q('select public.get_my_role() role')))[0].role,'viewer');
  await asUser(1,()=>rejects(()=>q("select public.admin_save_category('{\"name\":\"Test\",\"slug\":\"test\"}')"),/ADMIN_REQUIRED/));
- await asUser(1,()=>rejects(()=>q("select public.admin_save_setting('questions_per_match','8')"),/ADMIN_REQUIRED/));
- await asUser(2,()=>q("select public.admin_save_setting('questions_per_match','8')"));
+ await asUser(1,()=>rejects(()=>q("select public.admin_save_setting('questions_per_match','4')"),/ADMIN_REQUIRED/));
+ await asUser(2,()=>q("select public.admin_save_setting('questions_per_match','4')"));
  await asUser(2,()=>rejects(()=>q("select public.admin_save_setting('questions_per_match','30')"),/INVALID_SETTING/));
- await asUser(2,()=>q("select public.admin_save_setting('questions_per_match','10')"));
+ await asUser(2,()=>q("select public.admin_save_setting('questions_per_match','4')"));
  await asUser(2,()=>rejects(()=>q("select public.admin_set_role('badushamc312@gmail.com','viewer',true)"),/KEEP_ONE_SUPER_ADMIN/));
 });
 await test('A complete bot battle advances server-side and awards rewards once',async()=>{
  const bot=(await q("select id from public.matches where mode='bot' and status='pending'"))[0].id;
- for(let i=0;i<10;i++){
+ for(let i=0;i<4;i++){
   await q("update public.matches set next_tick_at=now()-interval '1 second' where id=$1",[bot]);
   await q('select sj_private.tick_match($1)',[bot]);
   const state=(await asUser(0,()=>q('select public.get_match_state($1) data',[bot])))[0].data;
@@ -171,7 +171,7 @@ await test('A complete bot battle advances server-side and awards rewards once',
  await q("update public.matches set next_tick_at=now()-interval '1 second' where id=$1",[bot]);
  await q('select sj_private.tick_match($1)',[bot]);
  assert.equal((await q('select status from public.matches where id=$1',[bot]))[0].status,'completed');
- assert.ok((await q('select xp_gained from public.match_players where match_id=$1 and user_id=$2',[bot,ids[0]]))[0].xp_gained>=70);
+ assert.ok((await q('select xp_gained from public.match_players where match_id=$1 and user_id=$2',[bot,ids[0]]))[0].xp_gained>=40);
 });
 await test('An early answer unlocks exactly one daily question, resumes there, and retries once',async()=>{
  const attempt=(await asUser(1,()=>q('select public.start_daily_attempt() data')))[0].data;
@@ -224,10 +224,10 @@ await test('Expired daily attempts auto-submit once and award a streak',async()=
 });
 await test('Admin question save validates options and preserves used questions',async()=>{
  const category=(await q("select id from public.categories where slug='quant'"))[0].id;
- const payload={category_id:category,question_text:'A new test question?',explanation:'A useful explanation.',difficulty:'easy',time_limit_seconds:15,status:'published',options:[{option_text:'First',is_correct:true},{option_text:'Second',is_correct:false}]};
+ const payload={category_id:category,topic_name:'Test topic',question_text:'A new test question?',explanation:'A useful explanation.',difficulty:'easy',time_limit_seconds:15,status:'published',options:[{option_text:'First',is_correct:true},{option_text:'Second',is_correct:false},{option_text:'Third',is_correct:false},{option_text:'Fourth',is_correct:false}]};
  const saved=(await asUser(2,()=>q('select public.admin_save_question($1::jsonb) id',[JSON.stringify(payload)])))[0].id;
  assert.ok(saved);
- await asUser(2,()=>rejects(()=>q('select public.admin_save_question($1::jsonb)',[JSON.stringify({...payload,options:[{option_text:'Same',is_correct:true},{option_text:'Same',is_correct:false}]})]),/ONE_CORRECT_AND_UNIQUE_OPTIONS_REQUIRED/));
+ await asUser(2,()=>rejects(()=>q('select public.admin_save_question($1::jsonb)',[JSON.stringify({...payload,options:[{option_text:'Same',is_correct:true},{option_text:'Same',is_correct:false},{option_text:'Third',is_correct:false},{option_text:'Fourth',is_correct:false}]})]),/ONE_CORRECT_AND_UNIQUE_OPTIONS_REQUIRED/));
  const used=(await q('select question_id from public.match_questions limit 1'))[0].question_id;
  await asUser(2,()=>rejects(()=>q('select public.admin_save_question($1::jsonb)',[JSON.stringify({...payload,id:used})]),/QUESTION_ALREADY_USED/));
 });
@@ -242,17 +242,17 @@ await test('Daily scheduling and analytics enforce admin permission',async()=>{
 await test('Completed battle report exposes real timing and both choices only to participants',async()=>{
  const bot=(await q("select id from public.matches where mode='bot' and status='completed'"))[0].id;
  const report=(await asUser(0,()=>q('select public.get_match_review($1) data',[bot])))[0].data;
- assert.equal(report.rounds_played,10);assert.equal(report.players.length,2);
+ assert.equal(report.rounds_played,4);assert.equal(report.players.length,2);
  const me=report.players.find(p=>p.id===ids[0]);
- assert.equal(me.correct,10);assert.equal(me.wrong,0);assert.equal(me.unanswered,0);assert.equal(me.accuracy,100);
+ assert.equal(me.correct,4);assert.equal(me.wrong,0);assert.equal(me.unanswered,0);assert.equal(me.accuracy,100);
  assert.equal(me.base_points+me.speed_bonus,me.score);
- assert.equal(report.questions.reduce((sum,q)=>sum+q.points,0),me.score);
- assert.equal(report.questions.at(-1).multiplier,2);
+ assert.ok(Math.abs(report.questions.reduce((sum,q)=>sum+q.points,0)-me.score)<0.00001);
+ assert.equal(report.questions.at(-1).multiplier,1);
  assert.ok(report.questions.every(q=>q.response_ms!==null&&q.opponent_response_ms!==null));
  assert.ok(report.questions.every(q=>q.opponent_option_id&&q.correct_option_id));
  await asUser(2,()=>rejects(()=>q('select public.get_match_review($1)',[bot]),/REVIEW_UNAVAILABLE/));
  const partial=(await asUser(0,()=>q('select public.get_match_review($1) data',[mid])))[0].data;
- assert.equal(partial.question_count,10);assert.equal(partial.rounds_played,1);
+ assert.equal(partial.question_count,4);assert.equal(partial.rounds_played,1);
  assert.equal(partial.questions.length,1); // Never describe unplayed questions as incorrect.
 });
 await test('Report portraits are visible to the two participants after the match',async()=>{
@@ -262,6 +262,8 @@ await test('Report portraits are visible to the two participants after the match
  assert.equal(await readPhoto(0,key,mid),photoFixture);
  assert.equal(await readPhoto(2,key,mid),null);
 });
+const {verifyRedesign}=await import('./redesign.mjs');
+await verifyRedesign({test,q,asUser,rejects,assert,ids});
 await test('Account deletion is service-only and removes personal data without breaking history',async()=>{
  await asUser(0,()=>rejects(()=>q('select public.anonymize_account($1)',[ids[1]]),/permission denied/));
  await q('select public.anonymize_account($1)',[ids[1]]);

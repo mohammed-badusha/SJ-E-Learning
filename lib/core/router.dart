@@ -22,14 +22,14 @@ import '../features/admin/presentation/question_editor_screen.dart';
 part 'router.g.dart';
 
 @TypedGoRoute<HomeRoute>(path: '/')
-class HomeRoute extends GoRouteData with _$HomeRoute {
+class HomeRoute extends GoRouteData with $HomeRoute {
   const HomeRoute();
   @override
   Widget build(BuildContext context, GoRouterState state) => const HomeScreen();
 }
 
 @TypedGoRoute<LoginRoute>(path: '/login')
-class LoginRoute extends GoRouteData with _$LoginRoute {
+class LoginRoute extends GoRouteData with $LoginRoute {
   const LoginRoute();
   @override
   Widget build(BuildContext context, GoRouterState state) =>
@@ -37,7 +37,7 @@ class LoginRoute extends GoRouteData with _$LoginRoute {
 }
 
 @TypedGoRoute<CompleteProfileRoute>(path: '/complete-profile')
-class CompleteProfileRoute extends GoRouteData with _$CompleteProfileRoute {
+class CompleteProfileRoute extends GoRouteData with $CompleteProfileRoute {
   const CompleteProfileRoute();
   @override
   Widget build(BuildContext context, GoRouterState state) =>
@@ -45,7 +45,7 @@ class CompleteProfileRoute extends GoRouteData with _$CompleteProfileRoute {
 }
 
 @TypedGoRoute<CategoryRoute>(path: '/categories')
-class CategoryRoute extends GoRouteData with _$CategoryRoute {
+class CategoryRoute extends GoRouteData with $CategoryRoute {
   const CategoryRoute({this.mode = 'practice'});
   final String mode;
   @override
@@ -54,15 +54,19 @@ class CategoryRoute extends GoRouteData with _$CategoryRoute {
 }
 
 @TypedGoRoute<QuizRoute>(path: '/quiz')
-class QuizRoute extends GoRouteData with _$QuizRoute {
+class QuizRoute extends GoRouteData with $QuizRoute {
   const QuizRoute({
     this.category = 'mixed',
     this.subtopic,
     this.mode = 'practice',
     this.timed = true,
+    this.exam,
+    this.difficulty,
+    this.count = 10,
   });
   final String category, mode;
-  final String? subtopic;
+  final String? subtopic, exam, difficulty;
+  final int count;
   final bool timed;
   @override
   Widget build(BuildContext context, GoRouterState state) => QuizScreen(
@@ -70,11 +74,14 @@ class QuizRoute extends GoRouteData with _$QuizRoute {
     subtopic: subtopic,
     mode: mode,
     timed: timed,
+    exam: exam,
+    difficulty: difficulty,
+    questionCount: count,
   );
 }
 
 @TypedGoRoute<ReviewRoute>(path: '/review')
-class ReviewRoute extends GoRouteData with _$ReviewRoute {
+class ReviewRoute extends GoRouteData with $ReviewRoute {
   const ReviewRoute({this.$extra});
   final List<Map<String, dynamic>>? $extra;
   @override
@@ -83,7 +90,7 @@ class ReviewRoute extends GoRouteData with _$ReviewRoute {
 }
 
 @TypedGoRoute<MatchmakingRoute>(path: '/matchmaking')
-class MatchmakingRoute extends GoRouteData with _$MatchmakingRoute {
+class MatchmakingRoute extends GoRouteData with $MatchmakingRoute {
   const MatchmakingRoute({this.category = 'mixed', this.subtopic});
   final String category;
   final String? subtopic;
@@ -93,7 +100,7 @@ class MatchmakingRoute extends GoRouteData with _$MatchmakingRoute {
 }
 
 @TypedGoRoute<BattleRoute>(path: '/battle/:id')
-class BattleRoute extends GoRouteData with _$BattleRoute {
+class BattleRoute extends GoRouteData with $BattleRoute {
   const BattleRoute({required this.id});
   final String id;
   @override
@@ -102,7 +109,7 @@ class BattleRoute extends GoRouteData with _$BattleRoute {
 }
 
 @TypedGoRoute<DailyRoute>(path: '/daily')
-class DailyRoute extends GoRouteData with _$DailyRoute {
+class DailyRoute extends GoRouteData with $DailyRoute {
   const DailyRoute();
   @override
   Widget build(BuildContext context, GoRouterState state) =>
@@ -110,7 +117,7 @@ class DailyRoute extends GoRouteData with _$DailyRoute {
 }
 
 @TypedGoRoute<LeaderboardRoute>(path: '/leaderboard')
-class LeaderboardRoute extends GoRouteData with _$LeaderboardRoute {
+class LeaderboardRoute extends GoRouteData with $LeaderboardRoute {
   const LeaderboardRoute();
   @override
   Widget build(BuildContext context, GoRouterState state) =>
@@ -118,7 +125,7 @@ class LeaderboardRoute extends GoRouteData with _$LeaderboardRoute {
 }
 
 @TypedGoRoute<HistoryRoute>(path: '/history')
-class HistoryRoute extends GoRouteData with _$HistoryRoute {
+class HistoryRoute extends GoRouteData with $HistoryRoute {
   const HistoryRoute();
   @override
   Widget build(BuildContext context, GoRouterState state) =>
@@ -126,7 +133,7 @@ class HistoryRoute extends GoRouteData with _$HistoryRoute {
 }
 
 @TypedGoRoute<ProfileRoute>(path: '/profile')
-class ProfileRoute extends GoRouteData with _$ProfileRoute {
+class ProfileRoute extends GoRouteData with $ProfileRoute {
   const ProfileRoute();
   @override
   Widget build(BuildContext context, GoRouterState state) =>
@@ -134,7 +141,7 @@ class ProfileRoute extends GoRouteData with _$ProfileRoute {
 }
 
 @TypedGoRoute<SettingsRoute>(path: '/settings')
-class SettingsRoute extends GoRouteData with _$SettingsRoute {
+class SettingsRoute extends GoRouteData with $SettingsRoute {
   const SettingsRoute();
   @override
   Widget build(BuildContext context, GoRouterState state) =>
@@ -142,7 +149,7 @@ class SettingsRoute extends GoRouteData with _$SettingsRoute {
 }
 
 @TypedGoRoute<EditProfileRoute>(path: '/edit-profile')
-class EditProfileRoute extends GoRouteData with _$EditProfileRoute {
+class EditProfileRoute extends GoRouteData with $EditProfileRoute {
   const EditProfileRoute();
   @override
   Widget build(BuildContext context, GoRouterState state) =>
@@ -150,7 +157,7 @@ class EditProfileRoute extends GoRouteData with _$EditProfileRoute {
 }
 
 @TypedGoRoute<AdminRoute>(path: '/admin')
-class AdminRoute extends GoRouteData with _$AdminRoute {
+class AdminRoute extends GoRouteData with $AdminRoute {
   const AdminRoute();
   @override
   Widget build(BuildContext context, GoRouterState state) =>
@@ -158,7 +165,7 @@ class AdminRoute extends GoRouteData with _$AdminRoute {
 }
 
 @TypedGoRoute<QuestionEditorRoute>(path: '/admin/question')
-class QuestionEditorRoute extends GoRouteData with _$QuestionEditorRoute {
+class QuestionEditorRoute extends GoRouteData with $QuestionEditorRoute {
   const QuestionEditorRoute({this.$extra});
   final Map<String, dynamic>? $extra;
   @override
@@ -167,7 +174,7 @@ class QuestionEditorRoute extends GoRouteData with _$QuestionEditorRoute {
 }
 
 @TypedGoRoute<GalleryRoute>(path: '/gallery')
-class GalleryRoute extends GoRouteData with _$GalleryRoute {
+class GalleryRoute extends GoRouteData with $GalleryRoute {
   const GalleryRoute();
   @override
   Widget build(BuildContext context, GoRouterState state) =>

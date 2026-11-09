@@ -10,7 +10,7 @@ class SearchClock extends ValueNotifier<int?> {
   Timer? _timer;
   DateTime? _deadline;
   String? _entry;
-  int total = 20;
+  int total = 10;
   void sync({
     required DateTime joined,
     required DateTime server,

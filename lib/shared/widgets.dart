@@ -31,21 +31,16 @@ class ArenaCard extends StatelessWidget {
   final EdgeInsets padding;
   final Color? color;
   @override
-  Widget build(BuildContext context) => Container(
-    padding: padding,
-    decoration: BoxDecoration(
-      color: color ?? context.tokens.card,
+  Widget build(BuildContext context) => Material(
+    color: color ?? context.tokens.card,
+    shape: RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: context.tokens.line),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: .025),
-          blurRadius: 14,
-          offset: const Offset(0, 4),
-        ),
-      ],
+      side: BorderSide(color: context.tokens.line),
     ),
-    child: child,
+    elevation: 1,
+    shadowColor: Colors.black.withValues(alpha: .025),
+    clipBehavior: Clip.antiAlias,
+    child: Padding(padding: padding, child: child),
   );
 }
 
