@@ -11,10 +11,16 @@ export async function verifyRedesign({test,q,asUser,rejects,assert,ids}) {
   assert.deepEqual(rounds,[{slug:'reasoning',seconds:40},{slug:'general-awareness',seconds:15},{slug:'quant',seconds:40},{slug:'english',seconds:15}]);
   assert.equal(Number((await q("select value from public.app_settings where key='search_timeout_seconds'"))[0].value),10);
  });
- await test('Bot plans contain exactly 2, 3 or 4 correct rounds; identity pool has 80+ names',async()=>{
-  assert.ok((await q('select count(*)::int n from sj_private.bot_names'))[0].n>=80);
-  const bot=(await q("select p.id,p.level,p.avatar_url from public.profiles p join public.matches m on m.player2_id=p.id where m.rules_version=2 and m.mode='bot' limit 1"))[0];
-  assert.ok(bot.level>=8&&bot.level<=35);assert.match(bot.avatar_url,/^color:#[0-9A-Fa-f]{6}$/);
+ await test('Bot plans use the new private identity pool and contain 2, 3 or 4 correct rounds',async()=>{
+  const identities=await q('select name,avatar_color,experience_level,play_style from sj_private.bot_names');
+  assert.equal(identities.length,139);
+  assert.ok(['Arjun','Athira','Joseph','Maria','Ashiq','Fathima','Roobie'].every(name=>identities.some(i=>i.name===name)));
+  assert.ok(!identities.some(i=>i.name==='Aarav Sharma'));
+  assert.ok(identities.every(i=>i.experience_level>=8&&i.experience_level<=35&&/^#[0-9A-Fa-f]{6}$/.test(i.avatar_color)));
+  const bot=(await q("select p.id,p.full_name,p.level,p.avatar_url,m.bot_style from public.profiles p join public.matches m on m.player2_id=p.id where m.rules_version=2 and m.mode='bot' limit 1"))[0];
+  const identity=identities.find(i=>i.name===bot.full_name);
+  assert.ok(identity);assert.equal(bot.level,identity.experience_level);assert.equal(bot.avatar_url,`color:${identity.avatar_color}`);
+  assert.equal(bot.bot_style,identity.play_style);
   const plans=await q('select count(*)::int n,count(*) filter(where will_be_correct)::int correct from public.bot_plans group by match_id');
   assert.ok(plans.every(p=>p.n===4&&p.correct>=2&&p.correct<=4));
   const slots=new Set();
