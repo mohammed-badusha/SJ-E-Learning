@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$Profile {
 
- String get id; String get fullName; String? get phone; String? get avatarUrl; bool get profileCompleted; int get rating; int get xp; int get level; int get currentStreak; int get bestStreak; String? get targetExam; bool get isBanned;
+ String get id; String get fullName; String? get phone; String? get avatarUrl; bool get profileCompleted; int get rating; int get trophies; int get xp; int get level; int get currentStreak; int get bestStreak; String? get targetExam; bool get isBanned;
 /// Create a copy of Profile
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $ProfileCopyWith<Profile> get copyWith => _$ProfileCopyWithImpl<Profile>(this as
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is Profile&&(identical(other.id, id) || other.id == id)&&(identical(other.fullName, fullName) || other.fullName == fullName)&&(identical(other.phone, phone) || other.phone == phone)&&(identical(other.avatarUrl, avatarUrl) || other.avatarUrl == avatarUrl)&&(identical(other.profileCompleted, profileCompleted) || other.profileCompleted == profileCompleted)&&(identical(other.rating, rating) || other.rating == rating)&&(identical(other.xp, xp) || other.xp == xp)&&(identical(other.level, level) || other.level == level)&&(identical(other.currentStreak, currentStreak) || other.currentStreak == currentStreak)&&(identical(other.bestStreak, bestStreak) || other.bestStreak == bestStreak)&&(identical(other.targetExam, targetExam) || other.targetExam == targetExam)&&(identical(other.isBanned, isBanned) || other.isBanned == isBanned));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is Profile&&(identical(other.id, id) || other.id == id)&&(identical(other.fullName, fullName) || other.fullName == fullName)&&(identical(other.phone, phone) || other.phone == phone)&&(identical(other.avatarUrl, avatarUrl) || other.avatarUrl == avatarUrl)&&(identical(other.profileCompleted, profileCompleted) || other.profileCompleted == profileCompleted)&&(identical(other.rating, rating) || other.rating == rating)&&(identical(other.trophies, trophies) || other.trophies == trophies)&&(identical(other.xp, xp) || other.xp == xp)&&(identical(other.level, level) || other.level == level)&&(identical(other.currentStreak, currentStreak) || other.currentStreak == currentStreak)&&(identical(other.bestStreak, bestStreak) || other.bestStreak == bestStreak)&&(identical(other.targetExam, targetExam) || other.targetExam == targetExam)&&(identical(other.isBanned, isBanned) || other.isBanned == isBanned));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,fullName,phone,avatarUrl,profileCompleted,rating,xp,level,currentStreak,bestStreak,targetExam,isBanned);
+int get hashCode => Object.hash(runtimeType,id,fullName,phone,avatarUrl,profileCompleted,rating,trophies,xp,level,currentStreak,bestStreak,targetExam,isBanned);
 
 @override
 String toString() {
-  return 'Profile(id: $id, fullName: $fullName, phone: $phone, avatarUrl: $avatarUrl, profileCompleted: $profileCompleted, rating: $rating, xp: $xp, level: $level, currentStreak: $currentStreak, bestStreak: $bestStreak, targetExam: $targetExam, isBanned: $isBanned)';
+  return 'Profile(id: $id, fullName: $fullName, phone: $phone, avatarUrl: $avatarUrl, profileCompleted: $profileCompleted, rating: $rating, trophies: $trophies, xp: $xp, level: $level, currentStreak: $currentStreak, bestStreak: $bestStreak, targetExam: $targetExam, isBanned: $isBanned)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $ProfileCopyWith<$Res>  {
   factory $ProfileCopyWith(Profile value, $Res Function(Profile) _then) = _$ProfileCopyWithImpl;
 @useResult
 $Res call({
- String id, String fullName, String? phone, String? avatarUrl, bool profileCompleted, int rating, int xp, int level, int currentStreak, int bestStreak, String? targetExam, bool isBanned
+ String id, String fullName, String? phone, String? avatarUrl, bool profileCompleted, int rating, int trophies, int xp, int level, int currentStreak, int bestStreak, String? targetExam, bool isBanned
 });
 
 
@@ -65,7 +65,7 @@ class _$ProfileCopyWithImpl<$Res>
 
 /// Create a copy of Profile
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? fullName = null,Object? phone = freezed,Object? avatarUrl = freezed,Object? profileCompleted = null,Object? rating = null,Object? xp = null,Object? level = null,Object? currentStreak = null,Object? bestStreak = null,Object? targetExam = freezed,Object? isBanned = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? fullName = null,Object? phone = freezed,Object? avatarUrl = freezed,Object? profileCompleted = null,Object? rating = null,Object? trophies = null,Object? xp = null,Object? level = null,Object? currentStreak = null,Object? bestStreak = null,Object? targetExam = freezed,Object? isBanned = null,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,fullName: null == fullName ? _self.fullName : fullName // ignore: cast_nullable_to_non_nullable
@@ -73,6 +73,7 @@ as String,phone: freezed == phone ? _self.phone : phone // ignore: cast_nullable
 as String?,avatarUrl: freezed == avatarUrl ? _self.avatarUrl : avatarUrl // ignore: cast_nullable_to_non_nullable
 as String?,profileCompleted: null == profileCompleted ? _self.profileCompleted : profileCompleted // ignore: cast_nullable_to_non_nullable
 as bool,rating: null == rating ? _self.rating : rating // ignore: cast_nullable_to_non_nullable
+as int,trophies: null == trophies ? _self.trophies : trophies // ignore: cast_nullable_to_non_nullable
 as int,xp: null == xp ? _self.xp : xp // ignore: cast_nullable_to_non_nullable
 as int,level: null == level ? _self.level : level // ignore: cast_nullable_to_non_nullable
 as int,currentStreak: null == currentStreak ? _self.currentStreak : currentStreak // ignore: cast_nullable_to_non_nullable
@@ -164,10 +165,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String fullName,  String? phone,  String? avatarUrl,  bool profileCompleted,  int rating,  int xp,  int level,  int currentStreak,  int bestStreak,  String? targetExam,  bool isBanned)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String fullName,  String? phone,  String? avatarUrl,  bool profileCompleted,  int rating,  int trophies,  int xp,  int level,  int currentStreak,  int bestStreak,  String? targetExam,  bool isBanned)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _Profile() when $default != null:
-return $default(_that.id,_that.fullName,_that.phone,_that.avatarUrl,_that.profileCompleted,_that.rating,_that.xp,_that.level,_that.currentStreak,_that.bestStreak,_that.targetExam,_that.isBanned);case _:
+return $default(_that.id,_that.fullName,_that.phone,_that.avatarUrl,_that.profileCompleted,_that.rating,_that.trophies,_that.xp,_that.level,_that.currentStreak,_that.bestStreak,_that.targetExam,_that.isBanned);case _:
   return orElse();
 
 }
@@ -185,10 +186,10 @@ return $default(_that.id,_that.fullName,_that.phone,_that.avatarUrl,_that.profil
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String fullName,  String? phone,  String? avatarUrl,  bool profileCompleted,  int rating,  int xp,  int level,  int currentStreak,  int bestStreak,  String? targetExam,  bool isBanned)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String fullName,  String? phone,  String? avatarUrl,  bool profileCompleted,  int rating,  int trophies,  int xp,  int level,  int currentStreak,  int bestStreak,  String? targetExam,  bool isBanned)  $default,) {final _that = this;
 switch (_that) {
 case _Profile():
-return $default(_that.id,_that.fullName,_that.phone,_that.avatarUrl,_that.profileCompleted,_that.rating,_that.xp,_that.level,_that.currentStreak,_that.bestStreak,_that.targetExam,_that.isBanned);case _:
+return $default(_that.id,_that.fullName,_that.phone,_that.avatarUrl,_that.profileCompleted,_that.rating,_that.trophies,_that.xp,_that.level,_that.currentStreak,_that.bestStreak,_that.targetExam,_that.isBanned);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -205,10 +206,10 @@ return $default(_that.id,_that.fullName,_that.phone,_that.avatarUrl,_that.profil
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String fullName,  String? phone,  String? avatarUrl,  bool profileCompleted,  int rating,  int xp,  int level,  int currentStreak,  int bestStreak,  String? targetExam,  bool isBanned)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String fullName,  String? phone,  String? avatarUrl,  bool profileCompleted,  int rating,  int trophies,  int xp,  int level,  int currentStreak,  int bestStreak,  String? targetExam,  bool isBanned)?  $default,) {final _that = this;
 switch (_that) {
 case _Profile() when $default != null:
-return $default(_that.id,_that.fullName,_that.phone,_that.avatarUrl,_that.profileCompleted,_that.rating,_that.xp,_that.level,_that.currentStreak,_that.bestStreak,_that.targetExam,_that.isBanned);case _:
+return $default(_that.id,_that.fullName,_that.phone,_that.avatarUrl,_that.profileCompleted,_that.rating,_that.trophies,_that.xp,_that.level,_that.currentStreak,_that.bestStreak,_that.targetExam,_that.isBanned);case _:
   return null;
 
 }
@@ -220,7 +221,7 @@ return $default(_that.id,_that.fullName,_that.phone,_that.avatarUrl,_that.profil
 
 @JsonSerializable(fieldRename: FieldRename.snake)
 class _Profile extends Profile {
-  const _Profile({required this.id, this.fullName = '', this.phone, this.avatarUrl, this.profileCompleted = false, this.rating = 1000, this.xp = 0, this.level = 1, this.currentStreak = 0, this.bestStreak = 0, this.targetExam, this.isBanned = false}): super._();
+  const _Profile({required this.id, this.fullName = '', this.phone, this.avatarUrl, this.profileCompleted = false, this.rating = 0, this.trophies = 0, this.xp = 0, this.level = 1, this.currentStreak = 0, this.bestStreak = 0, this.targetExam, this.isBanned = false}): super._();
   factory _Profile.fromJson(Map<String, dynamic> json) => _$ProfileFromJson(json);
 
 @override final  String id;
@@ -229,6 +230,7 @@ class _Profile extends Profile {
 @override final  String? avatarUrl;
 @override@JsonKey() final  bool profileCompleted;
 @override@JsonKey() final  int rating;
+@override@JsonKey() final  int trophies;
 @override@JsonKey() final  int xp;
 @override@JsonKey() final  int level;
 @override@JsonKey() final  int currentStreak;
@@ -249,16 +251,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Profile&&(identical(other.id, id) || other.id == id)&&(identical(other.fullName, fullName) || other.fullName == fullName)&&(identical(other.phone, phone) || other.phone == phone)&&(identical(other.avatarUrl, avatarUrl) || other.avatarUrl == avatarUrl)&&(identical(other.profileCompleted, profileCompleted) || other.profileCompleted == profileCompleted)&&(identical(other.rating, rating) || other.rating == rating)&&(identical(other.xp, xp) || other.xp == xp)&&(identical(other.level, level) || other.level == level)&&(identical(other.currentStreak, currentStreak) || other.currentStreak == currentStreak)&&(identical(other.bestStreak, bestStreak) || other.bestStreak == bestStreak)&&(identical(other.targetExam, targetExam) || other.targetExam == targetExam)&&(identical(other.isBanned, isBanned) || other.isBanned == isBanned));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Profile&&(identical(other.id, id) || other.id == id)&&(identical(other.fullName, fullName) || other.fullName == fullName)&&(identical(other.phone, phone) || other.phone == phone)&&(identical(other.avatarUrl, avatarUrl) || other.avatarUrl == avatarUrl)&&(identical(other.profileCompleted, profileCompleted) || other.profileCompleted == profileCompleted)&&(identical(other.rating, rating) || other.rating == rating)&&(identical(other.trophies, trophies) || other.trophies == trophies)&&(identical(other.xp, xp) || other.xp == xp)&&(identical(other.level, level) || other.level == level)&&(identical(other.currentStreak, currentStreak) || other.currentStreak == currentStreak)&&(identical(other.bestStreak, bestStreak) || other.bestStreak == bestStreak)&&(identical(other.targetExam, targetExam) || other.targetExam == targetExam)&&(identical(other.isBanned, isBanned) || other.isBanned == isBanned));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,fullName,phone,avatarUrl,profileCompleted,rating,xp,level,currentStreak,bestStreak,targetExam,isBanned);
+int get hashCode => Object.hash(runtimeType,id,fullName,phone,avatarUrl,profileCompleted,rating,trophies,xp,level,currentStreak,bestStreak,targetExam,isBanned);
 
 @override
 String toString() {
-  return 'Profile(id: $id, fullName: $fullName, phone: $phone, avatarUrl: $avatarUrl, profileCompleted: $profileCompleted, rating: $rating, xp: $xp, level: $level, currentStreak: $currentStreak, bestStreak: $bestStreak, targetExam: $targetExam, isBanned: $isBanned)';
+  return 'Profile(id: $id, fullName: $fullName, phone: $phone, avatarUrl: $avatarUrl, profileCompleted: $profileCompleted, rating: $rating, trophies: $trophies, xp: $xp, level: $level, currentStreak: $currentStreak, bestStreak: $bestStreak, targetExam: $targetExam, isBanned: $isBanned)';
 }
 
 
@@ -269,7 +271,7 @@ abstract mixin class _$ProfileCopyWith<$Res> implements $ProfileCopyWith<$Res> {
   factory _$ProfileCopyWith(_Profile value, $Res Function(_Profile) _then) = __$ProfileCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String fullName, String? phone, String? avatarUrl, bool profileCompleted, int rating, int xp, int level, int currentStreak, int bestStreak, String? targetExam, bool isBanned
+ String id, String fullName, String? phone, String? avatarUrl, bool profileCompleted, int rating, int trophies, int xp, int level, int currentStreak, int bestStreak, String? targetExam, bool isBanned
 });
 
 
@@ -286,7 +288,7 @@ class __$ProfileCopyWithImpl<$Res>
 
 /// Create a copy of Profile
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? fullName = null,Object? phone = freezed,Object? avatarUrl = freezed,Object? profileCompleted = null,Object? rating = null,Object? xp = null,Object? level = null,Object? currentStreak = null,Object? bestStreak = null,Object? targetExam = freezed,Object? isBanned = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? fullName = null,Object? phone = freezed,Object? avatarUrl = freezed,Object? profileCompleted = null,Object? rating = null,Object? trophies = null,Object? xp = null,Object? level = null,Object? currentStreak = null,Object? bestStreak = null,Object? targetExam = freezed,Object? isBanned = null,}) {
   return _then(_Profile(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,fullName: null == fullName ? _self.fullName : fullName // ignore: cast_nullable_to_non_nullable
@@ -294,6 +296,7 @@ as String,phone: freezed == phone ? _self.phone : phone // ignore: cast_nullable
 as String?,avatarUrl: freezed == avatarUrl ? _self.avatarUrl : avatarUrl // ignore: cast_nullable_to_non_nullable
 as String?,profileCompleted: null == profileCompleted ? _self.profileCompleted : profileCompleted // ignore: cast_nullable_to_non_nullable
 as bool,rating: null == rating ? _self.rating : rating // ignore: cast_nullable_to_non_nullable
+as int,trophies: null == trophies ? _self.trophies : trophies // ignore: cast_nullable_to_non_nullable
 as int,xp: null == xp ? _self.xp : xp // ignore: cast_nullable_to_non_nullable
 as int,level: null == level ? _self.level : level // ignore: cast_nullable_to_non_nullable
 as int,currentStreak: null == currentStreak ? _self.currentStreak : currentStreak // ignore: cast_nullable_to_non_nullable

@@ -32,6 +32,11 @@ async function q(sql,params=[]) {return (await db.query(sql,params)).rows;}
 async function rejects(fn,pattern) {await assert.rejects(fn,pattern);}
 await test('Unfinished profiles cannot start a game',()=>asUser(0,()=>rejects(()=>q('select public.start_practice()'),/PROFILE_REQUIRED/)));
 for(let i=0;i<3;i++) await asUser(i,()=>q('select public.complete_profile($1,$2)',[`Student ${i}`,`+91987654321${i}`]));
+await test('New players start at zero trophies and cannot edit them',async()=>{
+ assert.deepEqual((await q('select trophies from public.profiles where id=$1',[ids[0]]))[0],{trophies:0});
+ await asUser(0,()=>rejects(()=>q('update public.profiles set trophies=100'),/can only be updated to DEFAULT|permission denied/i));
+ assert.equal(Number((await asUser(0,()=>q("select metric from jsonb_to_recordset(public.get_leaderboard('all_time')->'rows') as x(id uuid,metric numeric) where id=$1",[ids[0]])))[0].metric),0);
+});
 await test('Duplicate phone numbers rejected',()=>asUser(3,()=>rejects(()=>q("select public.complete_profile('Duplicate Student','+919876543210')"),/PHONE_IN_USE/)));
 await test('Invalid phone and short names rejected',()=>asUser(3,async()=>{
  await rejects(()=>q("select public.complete_profile('A','+919876543219')"),/INVALID_NAME/);
@@ -126,6 +131,35 @@ await test('Finalization idempotent and participant history protected',async()=>
  assert.equal((await q('select xp from public.profiles where id=$1',[ids[1]]))[0].xp,xp);
  await asUser(2,()=>rejects(()=>q('select public.get_match_review($1)',[mid]),/REVIEW_UNAVAILABLE/));
 });
+await test('Human battle gives fifteen for a win and floors a loss at zero',async()=>{
+ const players=await q('select user_id,result,rating_before,rating_after from public.match_players where match_id=$1',[mid]);
+ const winner=players.find(p=>p.user_id===ids[1]);
+ const loser=players.find(p=>p.user_id===ids[0]);
+ assert.equal(winner.result,'win');assert.equal(winner.rating_after-winner.rating_before,15);
+ assert.equal(loser.result,'loss');assert.equal(loser.rating_after,0);
+ assert.equal((await q('select trophies from public.profiles where id=$1',[ids[1]]))[0].trophies,15);
+ assert.equal((await q('select trophies from public.profiles where id=$1',[ids[0]]))[0].trophies,0);
+});
+await test('Weekly podium returns portraits for its three leaders only',async()=>{
+ const rows=(await asUser(0,()=>q('select public.get_weekly_podium_portraits() data')))[0].data.rows;
+ assert.equal(rows.length,3);
+ assert.equal(new Set(rows.map(row=>row.id)).size,3);
+ assert.ok(rows.every(row=>[ids[0],ids[1],ids[2]].includes(row.id)));
+ assert.equal(rows.find(row=>row.id===ids[1]).photo_png,photoFixture);
+});
+await test('Bot wins award fifteen and losses demote across the Silver boundary',async()=>{
+ await q('begin');
+ try {
+  const bot=(await q("insert into public.profiles(full_name,is_bot,rating,level,avatar_url) values('Test Bot',true,1000,8,'color:#5B4CFF') returning id"))[0].id;
+  await q('update public.profiles set rating=1000 where id=$1',[ids[0]]);
+  const lost=(await q("select sj_private.new_match($1,$2,null,null,'bot') id",[ids[0],bot]))[0].id;
+  await q('select sj_private.finalize_match($1,$2)',[lost,bot]);
+  assert.equal((await q('select trophies from public.profiles where id=$1',[ids[0]]))[0].trophies,995);
+  const won=(await q("select sj_private.new_match($1,$2,null,null,'bot') id",[ids[0],bot]))[0].id;
+  await q('select sj_private.finalize_match($1,$2)',[won,ids[0]]);
+  assert.equal((await q('select trophies from public.profiles where id=$1',[ids[0]]))[0].trophies,1010);
+ } finally { await q('rollback'); }
+});
 await test('Bot cannot start early and uses one queue entry',async()=>{
  await asUser(0,()=>q('select public.join_matchmaking()'));
  await asUser(0,()=>rejects(()=>q('select public.start_bot_match()'),/SEARCH_NOT_EXPIRED/));
@@ -172,6 +206,8 @@ await test('A complete bot battle advances server-side and awards rewards once',
  await q('select sj_private.tick_match($1)',[bot]);
  assert.equal((await q('select status from public.matches where id=$1',[bot]))[0].status,'completed');
  assert.ok((await q('select xp_gained from public.match_players where match_id=$1 and user_id=$2',[bot,ids[0]]))[0].xp_gained>=40);
+ const payout=(await q('select result,rating_before,rating_after from public.match_players where match_id=$1 and user_id=$2',[bot,ids[0]]))[0];
+ assert.equal(payout.rating_after,Math.max(0,payout.rating_before+(payout.result==='win'?15:payout.result==='loss'?-5:0)));
 });
 await test('An early answer unlocks exactly one daily question, resumes there, and retries once',async()=>{
  const attempt=(await asUser(1,()=>q('select public.start_daily_attempt() data')))[0].data;

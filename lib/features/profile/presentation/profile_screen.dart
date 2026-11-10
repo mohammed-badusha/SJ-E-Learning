@@ -112,7 +112,7 @@ class _ProfileState extends ConsumerState<ProfileScreen> {
                               ),
                             ),
                             Text(
-                              '${profile.tier} · ${profile.rating} rating',
+                              '${profile.tier} · ${profile.trophies} trophies',
                               style: const TextStyle(color: Colors.white70),
                             ),
                           ],
@@ -301,7 +301,7 @@ class _ProfileState extends ConsumerState<ProfileScreen> {
               },
             ),
             const SizedBox(height: 24),
-            ArenaCard(child: TierProgress(rating: profile.rating)),
+            ArenaCard(child: TierProgress(rating: profile.trophies)),
             const SizedBox(height: 16),
             OutlinedButton.icon(
               onPressed: () => context.go('/history'),

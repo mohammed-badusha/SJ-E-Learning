@@ -30,7 +30,8 @@ abstract class Profile with _$Profile {
     String? phone,
     String? avatarUrl,
     @Default(false) bool profileCompleted,
-    @Default(1000) int rating,
+    @Default(0) int rating,
+    @Default(0) int trophies,
     @Default(0) int xp,
     @Default(1) int level,
     @Default(0) int currentStreak,
@@ -41,7 +42,7 @@ abstract class Profile with _$Profile {
   factory Profile.fromJson(Map<String, dynamic> json) =>
       _$ProfileFromJson(json);
   String get firstName => fullName.trim().split(' ').first;
-  String get tier => RankTier.forRating(rating).label;
+  String get tier => RankTier.forTrophies(trophies).label;
 }
 
 String? validateName(String value) =>

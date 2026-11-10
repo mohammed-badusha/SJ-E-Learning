@@ -20,14 +20,14 @@ Follow [SETUP.md](docs/SETUP.md) to install the database and enable Google sign-
 - Supplied SJ open-book logo, bundled Poppins typography, navy light-first design, light/dark themes, responsive dashboard, podium leaderboard, subject cards, progress screens and reusable game controls.
 - Google sign-in through Supabase browser OAuth on Android and web, mandatory name/India-phone completion with optional illustrated portraits or a cropped gallery photo, typed routes, role guard, role refresh on resume and safe sign-out.
 - Home, database categories/subtopics, timed/untimed practice, explanations, results and local answer-review history.
-- Server-authoritative human matching and bot fallback, row-locked single-match creation, immutable question snapshots, scoring, Elo/XP, bot plans, deadline/grace enforcement, first-answer locking, private Realtime broadcasts, server-owned advancement, heartbeat/reconnect/forfeit handling, results and review.
+- Server-authoritative human matching and bot fallback, row-locked single-match creation, immutable question snapshots, scoring, fixed battle trophy payouts (+15 win, −5 loss, 0 draw), XP, bot plans, deadline/grace enforcement, first-answer locking, private Realtime broadcasts, server-owned advancement, heartbeat/reconnect/forfeit handling, results and review.
 - Daily shared questions, one resumable attempt, server-owned deadlines, automatic completion, IST date boundaries, streak freezes and badges.
-- Rating/weekly/daily leaderboards, trophy/medal/diamond rank tiers, tier progress, fire streak indicators, profile stats, match history and settings.
+- Trophy/weekly/daily leaderboards, a weekly top-three podium with profile portraits, Bronze (0), Silver (1,000), Gold (3,000), Platinum (6,000) and Diamond (10,000) thresholds, tier progress, fire streak indicators, profile stats, match history and settings. New accounts start at 0 trophies; trophies cannot go negative and falling below a threshold demotes the tier.
 - Original bundled game cues and instrumental background music, independent saved volume controls, lifecycle pausing, and server-reveal-only answer sounds.
 - Detailed battle reports with both players’ timing, accuracy and score breakdowns, cumulative score charts, subject accuracy and answer-by-answer review.
 - Role-protected responsive admin dashboard, question editor/preview, CSV/XLSX draft import, category management, staff roles, bans, reports, daily auto-scheduling, analytics and settings.
 - Account anonymisation/deletion Edge Function and in-app deletion entry point.
-- Ten versioned migrations, first-install SQL package, deterministic sample seeds (4 categories, 12 topics, 160 questions, 20 bots), local Postgres checks and CI workflow.
+- Versioned migrations, first-install SQL package, deterministic sample seeds (4 categories, 12 topics, 160 questions, 20 bots), local Postgres checks and CI workflow.
 
 ## Verification
 

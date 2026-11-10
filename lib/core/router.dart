@@ -290,7 +290,7 @@ class _AppShell extends StatelessWidget {
                     vertical: 8,
                   ),
                   child: Text(
-                    'Local preview · sample data · no live rating changes',
+                    'Local preview · sample data · no live trophy changes',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 12,

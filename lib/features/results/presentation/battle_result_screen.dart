@@ -149,7 +149,7 @@ class _BattleResultState extends ConsumerState<BattleResultScreen> {
                 ),
                 if (report?.isBot == true && report?.labelBot == true) ...[
                   const SizedBox(height: 12),
-                  const Text('Practice match · Reduced rating change'),
+                  const Text('Practice opponent'),
                 ],
                 const SizedBox(height: 16),
                 PrimaryButton(
@@ -166,7 +166,7 @@ class _BattleResultState extends ConsumerState<BattleResultScreen> {
                     children: [
                       Expanded(
                         child: _Stat(
-                          label: 'Rating change',
+                          label: 'Trophy change',
                           value:
                               '${mine.ratingChange >= 0 ? '+' : ''}${mine.ratingChange}',
                           icon: Icons.trending_up_rounded,
@@ -338,6 +338,16 @@ class _BattleResultState extends ConsumerState<BattleResultScreen> {
                     RankTier.forRating(mine.ratingBefore).index) ...[
                   Text(
                     'Promoted to ${RankTier.forRating(mine.ratingAfter!).label}',
+                    style: context.type.titleMedium,
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                if (RankTier.forRating(
+                      mine.ratingAfter ?? mine.ratingBefore,
+                    ).index <
+                    RankTier.forRating(mine.ratingBefore).index) ...[
+                  Text(
+                    'Now in ${RankTier.forRating(mine.ratingAfter!).label} tier',
                     style: context.type.titleMedium,
                   ),
                   const SizedBox(height: 12),

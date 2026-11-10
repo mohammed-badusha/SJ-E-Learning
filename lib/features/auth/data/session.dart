@@ -127,7 +127,7 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
       final data = await client!
           .from('profiles')
           .select(
-            'id,full_name,phone,avatar_url,profile_completed,rating,xp,level,current_streak,best_streak,target_exam,is_banned',
+            'id,full_name,phone,avatar_url,profile_completed,rating,trophies,xp,level,current_streak,best_streak,target_exam,is_banned',
           )
           .eq('id', client!.auth.currentUser!.id)
           .maybeSingle();
@@ -180,6 +180,7 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
       fullName: 'Alex Learner',
       profileCompleted: true,
       rating: 1240,
+      trophies: 1240,
       xp: 180,
       level: 3,
       currentStreak: 7,

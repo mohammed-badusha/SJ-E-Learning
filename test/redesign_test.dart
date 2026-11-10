@@ -269,7 +269,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('#1'), findsOneWidget);
       expect(find.text('0'), findsWidgets);
-      await tester.tap(find.text('All-time rating'));
+      await tester.tap(find.text('All-time trophies'));
       await tester.pumpAndSettle();
       expect(requested.last, 'all_time');
       await tester.tap(find.text('Daily quiz'));

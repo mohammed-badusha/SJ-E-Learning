@@ -305,7 +305,7 @@ class _QuizState extends ConsumerState<QuizScreen> {
               const SizedBox(height: 8),
               Text(
                 repository.session.preview
-                    ? 'Local preview complete · no rating or XP changes'
+                    ? 'Local preview complete · no trophy or XP changes'
                     : 'Review your answers to prepare for the next round',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: context.tokens.muted),

@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import '../../../shared/arena_motion.dart';
 import '../../../shared/arena_panel.dart';
 import '../data/standings_cache.dart';
@@ -8,6 +11,7 @@ import 'package:intl/intl.dart';
 import '../../../core/theme.dart';
 import '../../../shared/widgets.dart';
 import '../../../shared/campus_widgets.dart';
+import '../../../shared/player_avatar.dart';
 import '../../auth/data/session.dart';
 import '../../practice/data/quiz_repository.dart';
 import '../../profile/domain/rank_tier.dart';
@@ -22,6 +26,7 @@ class LeaderboardScreen extends ConsumerStatefulWidget {
 class _LeaderboardState extends ConsumerState<LeaderboardScreen> {
   String type = 'weekly', arenaPeriod = 'weekly';
   late Future<Map<String, dynamic>> future;
+  late Future<Map<String, dynamic>> podiumPortraits;
   Map<String, dynamic>? cached;
   late final VoidCallback stopListening;
   @override
@@ -45,6 +50,10 @@ class _LeaderboardState extends ConsumerState<LeaderboardScreen> {
 
   void load() {
     final session = ref.read(sessionProvider);
+    podiumPortraits =
+        type == 'weekly' && !session.preview && widget.dataLoader == null
+        ? QuizRepository(session).rpc('get_weekly_podium_portraits')
+        : Future.value(const {'rows': []});
     final cache = ref.read(standingsCacheProvider);
     final key = 'standings:${session.profile!.id}:$type';
     final period = cache.period(type, DateTime.now());
@@ -67,6 +76,7 @@ class _LeaderboardState extends ConsumerState<LeaderboardScreen> {
                       'id': entry.$2.$1,
                       'full_name': entry.$2.$2,
                       'rating': entry.$2.$3,
+                      'trophies': entry.$2.$3,
                       'metric': type == 'all_time' ? entry.$2.$3 : entry.$2.$4,
                       'rank': entry.$1 + 1,
                       'level': 3,
@@ -95,7 +105,7 @@ class _LeaderboardState extends ConsumerState<LeaderboardScreen> {
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider);
-    final unit = type == 'all_time' ? 'rating' : 'pts';
+    final unit = type == 'all_time' ? 'trophies' : 'pts';
     return Scaffold(
       appBar: ArenaBar(
         title: const Text('Top performers'),
@@ -170,7 +180,7 @@ class _LeaderboardState extends ConsumerState<LeaderboardScreen> {
                           onSelected: (_) => select('weekly'),
                         ),
                         ChoiceChip(
-                          label: const Text('All-time rating'),
+                          label: const Text('All-time trophies'),
                           selected: type == 'all_time',
                           onSelected: (_) => select('all_time'),
                         ),
@@ -182,7 +192,7 @@ class _LeaderboardState extends ConsumerState<LeaderboardScreen> {
                         ? 'Today’s shared challenge · resets at midnight IST'
                         : type == 'weekly'
                         ? 'Battle points earned this week · resets Monday IST'
-                        : 'Your overall battle rating, across every season',
+                        : 'Your total battle trophies, across every season',
                     style: context.type.bodySmall,
                   ),
                   if (session.preview)
@@ -274,9 +284,20 @@ class _LeaderboardState extends ConsumerState<LeaderboardScreen> {
                                 style: context.type.titleMedium,
                               ),
                               const SizedBox(height: 12),
-                              _Podium(
-                                entries: rows.take(3).toList(),
-                                unit: unit,
+                              FutureBuilder<Map<String, dynamic>>(
+                                future: podiumPortraits,
+                                builder: (context, portraits) => _Podium(
+                                  entries: rows.take(3).toList(),
+                                  unit: unit,
+                                  portraits: {
+                                    for (final row
+                                        in (portraits.data?['rows'] as List? ??
+                                            const []))
+                                      if (row is Map && row['id'] is String)
+                                        row['id'] as String:
+                                            Map<String, dynamic>.from(row),
+                                  },
+                                ),
                               ),
                             ],
                           ),
@@ -423,9 +444,9 @@ class _Standing extends StatelessWidget {
               Text(
                 entry == null
                     ? 'Complete a round to get ranked'
-                    : entry!['rating'] == null
+                    : entry!['trophies'] == null && entry!['rating'] == null
                     ? 'Battle arena'
-                    : '${RankTier.forRating((entry!["rating"] as num).toInt()).label} tier',
+                    : '${RankTier.forTrophies(((entry!["trophies"] ?? entry!["rating"]) as num).toInt()).label} tier',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: context.type.bodySmall?.copyWith(color: Colors.white70),
@@ -452,9 +473,14 @@ class _Standing extends StatelessWidget {
 }
 
 class _Podium extends StatelessWidget {
-  const _Podium({required this.entries, required this.unit});
+  const _Podium({
+    required this.entries,
+    required this.unit,
+    required this.portraits,
+  });
   final List<Map<String, dynamic>> entries;
   final String unit;
+  final Map<String, Map<String, dynamic>> portraits;
   @override
   Widget build(BuildContext context) {
     final order = entries.length >= 2 ? [1, 0, if (entries.length > 2) 2] : [0];
@@ -472,7 +498,41 @@ class _Podium extends StatelessWidget {
                     rank: (entries[index]['rank'] as num).toInt(),
                     size: entries[index]['rank'] == 1 ? 46 : 38,
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 8),
+                  Builder(
+                    builder: (context) {
+                      final portrait = portraits[entries[index]['id']];
+                      final encoded = portrait?['photo_png'];
+                      Uint8List? photo;
+                      if (encoded is String) {
+                        try {
+                          photo = base64Decode(encoded);
+                        } catch (_) {
+                          /* initials fallback */
+                        }
+                      }
+                      final size = entries[index]['rank'] == 1 ? 56.0 : 46.0;
+                      final color = entries[index]['rank'] == 1
+                          ? ArenaTokens.gold
+                          : entries[index]['rank'] == 2
+                          ? ArenaTokens.silver
+                          : ArenaTokens.bronze;
+                      return Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: color,
+                        ),
+                        child: PlayerAvatar(
+                          name: entries[index]['full_name'] as String,
+                          reference: portrait?['avatar_url'] as String?,
+                          draft: photo,
+                          size: size,
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 8),
                   SizedBox(
                     height: MediaQuery.textScalerOf(context).scale(12) * 3,
                     child: Center(
@@ -585,9 +645,9 @@ class _RankingRow extends StatelessWidget {
                 const SizedBox(height: 5),
                 Text(
                   [
-                    if (entry['rating'] != null)
-                      RankTier.forRating(
-                        (entry['rating'] as num).toInt(),
+                    if (entry['trophies'] != null || entry['rating'] != null)
+                      RankTier.forTrophies(
+                        ((entry['trophies'] ?? entry['rating']) as num).toInt(),
                       ).label,
                     if (entry['level'] != null) 'Level ${entry['level']}',
                   ].join(' · '),

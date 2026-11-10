@@ -15,15 +15,23 @@ import 'support/battle_fixture.dart';
 
 void main() {
   setUpAll(loadAppFonts);
-  test('Rank boundaries agree with the actual rating thresholds', () {
-    expect(RankTier.forRating(1099), RankTier.bronze);
-    expect(RankTier.forRating(1100), RankTier.silver);
-    expect(RankTier.forRating(1300), RankTier.gold);
-    expect(RankTier.forRating(1500), RankTier.platinum);
-    expect(RankTier.forRating(1700), RankTier.diamond);
-    expect(RankTier.silver.pointsToNext(1200), 100);
-    expect(RankTier.silver.progress(1200), .5);
-    expect(RankTier.diamond.progress(1900), 1);
+  test('Trophy boundaries promote and demote at the exact thresholds', () {
+    expect(RankTier.forTrophies(0), RankTier.bronze);
+    expect(RankTier.forTrophies(999), RankTier.bronze);
+    expect(RankTier.forTrophies(1000), RankTier.silver);
+    expect(RankTier.forTrophies(2999), RankTier.silver);
+    expect(RankTier.forTrophies(3000), RankTier.gold);
+    expect(RankTier.forTrophies(5999), RankTier.gold);
+    expect(RankTier.forTrophies(6000), RankTier.platinum);
+    expect(RankTier.forTrophies(9999), RankTier.platinum);
+    expect(RankTier.forTrophies(10000), RankTier.diamond);
+    expect(RankTier.silver.pointsToNext(2000), 1000);
+    expect(RankTier.silver.progress(2000), .5);
+    expect(RankTier.bronze.progressAt(1000), 1);
+    expect(RankTier.silver.progressAt(999), 0);
+    expect(RankTier.silver.progressAt(2000), .5);
+    expect(RankTier.gold.progressAt(2000), 0);
+    expect(RankTier.diamond.progress(12000), 1);
     expect(RankTier.diamond.next, isNull);
   });
   test(

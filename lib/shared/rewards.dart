@@ -92,7 +92,7 @@ class TierProgress extends StatelessWidget {
                   Text(
                     tier.next == null
                         ? 'Highest tier reached'
-                        : '${tier.pointsToNext(rating)} rating to ${tier.next!.label}',
+                        : '${tier.pointsToNext(rating)} trophies to ${tier.next!.label}',
                     style: TextStyle(
                       color: context.tokens.secondary,
                       fontSize: 13,
@@ -101,7 +101,13 @@ class TierProgress extends StatelessWidget {
                 ],
               ),
             ),
-            CountMetric(rating, style: context.type.headlineSmall),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                CountMetric(rating, style: context.type.headlineSmall),
+                Text('trophies', style: context.type.bodySmall),
+              ],
+            ),
           ],
         ),
         const SizedBox(height: 16),
@@ -113,36 +119,27 @@ class TierProgress extends StatelessWidget {
             minHeight: 6,
           ),
         ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 16,
-          runSpacing: 8,
-          children: [
-            for (final step in RankTier.values)
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    step.icon,
-                    size: 16,
-                    color: rating >= step.floor
-                        ? step.color
-                        : context.tokens.muted,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    step.label,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: rating >= step.floor
-                          ? context.tokens.ink
-                          : context.tokens.muted,
-                    ),
-                  ),
-                ],
-              ),
-          ],
-        ),
+        const SizedBox(height: 20),
+        for (final step in RankTier.values) ...[
+          Row(
+            children: [
+              Icon(step.icon, size: 19, color: step.color),
+              const SizedBox(width: 10),
+              Expanded(child: Text(step.label, style: context.type.titleSmall)),
+              Text(step.rangeLabel, style: context.type.bodySmall),
+            ],
+          ),
+          const SizedBox(height: 7),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: step.progressAt(rating),
+              color: step.color,
+              minHeight: 7,
+            ),
+          ),
+          if (step != RankTier.diamond) const SizedBox(height: 16),
+        ],
       ],
     );
   }
