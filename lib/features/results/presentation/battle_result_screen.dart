@@ -358,7 +358,7 @@ class _BattleResultState extends ConsumerState<BattleResultScreen> {
                 const SizedBox(height: 32),
                 const SizedBox(height: 12),
                 OutlinedButton(
-                  onPressed: () => context.replace('/categories?mode=battle'),
+                  onPressed: () => context.replace('/matchmaking'),
                   child: const Text('Play again'),
                 ),
                 const SizedBox(height: 8),

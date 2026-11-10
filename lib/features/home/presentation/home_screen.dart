@@ -152,19 +152,11 @@ class HomeScreen extends ConsumerWidget {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              '1v1 Battle',
+                              '1v1 Live Battle',
                               style: context.type.headlineLarge?.copyWith(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w700,
                                 height: 1.02,
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            const Text(
-                              'Pick a subject and face an opponent.',
-                              style: TextStyle(
-                                color: Color(0xffe0e2f4),
-                                fontSize: 14,
                               ),
                             ),
                           ],
@@ -183,7 +175,7 @@ class HomeScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 14),
                   FilledButton.icon(
-                    onPressed: () => context.push('/categories?mode=battle'),
+                    onPressed: () => context.push('/matchmaking'),
                     style: FilledButton.styleFrom(
                       backgroundColor: arenaMint,
                       foregroundColor: arenaInk,

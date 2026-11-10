@@ -17,7 +17,9 @@ import 'package:quiz_arena/features/leaderboard/presentation/leaderboard_screen.
 import 'package:quiz_arena/features/daily_challenge/presentation/daily_screen.dart';
 import 'package:quiz_arena/features/auth/data/session.dart';
 import 'package:quiz_arena/features/home/presentation/home_screen.dart';
+import 'package:quiz_arena/features/matchmaking/presentation/matchmaking_screen.dart';
 import 'package:quiz_arena/features/practice/presentation/quiz_screen.dart';
+import 'package:quiz_arena/shared/arena_panel.dart';
 import 'package:quiz_arena/shared/widgets.dart';
 import 'package:go_router/go_router.dart';
 
@@ -108,10 +110,67 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(find.text('1v1 Battle'), findsOneWidget);
+        expect(find.text('1v1 Live Battle'), findsOneWidget);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
         router.dispose();
+        session.dispose();
+      },
+    );
+    testWidgets(
+      'Play 1v1 opens the centered search card in ${brightness.name}',
+      (tester) async {
+        tester.view.physicalSize = const Size(375, 900);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final session = SessionController(null)..enterPreview();
+        session.setTheme(
+          brightness == Brightness.dark ? ThemeMode.dark : ThemeMode.light,
+        );
+        final captureKey = GlobalKey();
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              sessionProvider.overrideWith((ref) => session),
+              audioBackendProvider.overrideWith((ref) => FakeAudioBackend()),
+            ],
+            child: RepaintBoundary(
+              key: captureKey,
+              child: const SJLearningApp(),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('Play 1v1'));
+        await tester.tap(find.text('Play 1v1'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(find.byType(MatchmakingScreen), findsOneWidget);
+        expect(find.text('Build your battle'), findsNothing);
+        expect(find.text('Searching for a live player'), findsNothing);
+        expect(find.byType(LinearProgressIndicator), findsNothing);
+        final card = find.ancestor(
+          of: find.text('Finding your opponent'),
+          matching: find.byType(ArenaPanel),
+        );
+        expect(card, findsOneWidget);
+        expect(tester.getCenter(card).dx, closeTo(187.5, 2));
+        expect(tester.getCenter(card).dy, inInclusiveRange(300, 650));
+        expect(tester.takeException(), isNull);
+        await tester.runAsync(() async {
+          final image =
+              await (captureKey.currentContext!.findRenderObject()
+                      as RenderRepaintBoundary)
+                  .toImage();
+          final data = await image.toByteData(format: ImageByteFormat.png);
+          await Directory('build/test-screenshots').create(recursive: true);
+          await File(
+            'build/test-screenshots/matchmaking-${brightness.name}.png',
+          ).writeAsBytes(data!.buffer.asUint8List());
+          image.dispose();
+        });
+        await tester.pumpWidget(const SizedBox.shrink());
         session.dispose();
       },
     );

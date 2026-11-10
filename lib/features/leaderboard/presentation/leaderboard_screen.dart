@@ -246,9 +246,7 @@ class _LeaderboardState extends ConsumerState<LeaderboardScreen> {
                         icon: Icons.emoji_events_outlined,
                         action: OutlinedButton(
                           onPressed: () => context.push(
-                            type == 'daily'
-                                ? '/daily'
-                                : '/categories?mode=battle',
+                            type == 'daily' ? '/daily' : '/matchmaking',
                           ),
                           child: Text(
                             type == 'daily'

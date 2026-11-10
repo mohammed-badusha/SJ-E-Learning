@@ -186,12 +186,18 @@ GoRouter createRouter(SessionController session) => GoRouter(
   refreshListenable: session,
   redirect: (context, state) {
     if (state.uri.path == '/gallery' && kDebugMode) return null;
-    return routeRedirect(
+    final authRedirect = routeRedirect(
       signedIn: session.signedIn,
       completed: session.completed,
       role: session.role,
       path: state.uri.path,
     );
+    if (authRedirect != null) return authRedirect;
+    if (state.uri.path == '/categories' &&
+        state.uri.queryParameters['mode'] == 'battle') {
+      return '/matchmaking';
+    }
+    return null;
   },
   errorBuilder: (context, state) => Scaffold(
     body: EmptyState(

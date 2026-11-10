@@ -131,7 +131,7 @@ void main() {
         ]) {
           tester.view.physicalSize = Size(layout.$1, layout.$2);
           for (final page in [
-            (const HomeScreen(), '1v1 Battle'),
+            (const HomeScreen(), '1v1 Live Battle'),
             (const LeaderboardScreen(), 'Rahul Sharma'),
             (const ProfileScreen(), 'Revisit your battles'),
             (const CategoryScreen(), 'Practise with a timer'),
