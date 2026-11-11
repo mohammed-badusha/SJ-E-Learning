@@ -2,11 +2,29 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/env.dart';
 import '../domain/models.dart';
 part 'session.g.dart';
+
+Future<void>? _nativeGoogleReady;
+const _googleIdentityScopes = <String>['email', 'profile'];
+
+Future<void> _initializeNativeGoogle() async {
+  if (Env.googleWebClientId.isEmpty) {
+    throw StateError('Google Web client ID is required for Android sign-in.');
+  }
+  try {
+    await (_nativeGoogleReady ??= GoogleSignIn.instance.initialize(
+      serverClientId: Env.googleWebClientId,
+    ));
+  } catch (_) {
+    _nativeGoogleReady = null;
+    rethrow;
+  }
+}
 
 @Riverpod(keepAlive: true)
 SessionController session(Ref ref) {
@@ -163,6 +181,29 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
       );
       return;
     }
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      await _initializeNativeGoogle();
+      final account = await GoogleSignIn.instance.authenticate(
+        scopeHint: _googleIdentityScopes,
+      );
+      final idToken = account.authentication.idToken;
+      if (idToken == null || idToken.isEmpty) {
+        throw const AuthException('Google did not return an ID token.');
+      }
+      final authorization =
+          await account.authorizationClient.authorizationForScopes(
+            _googleIdentityScopes,
+          ) ??
+          await account.authorizationClient.authorizeScopes(
+            _googleIdentityScopes,
+          );
+      await client!.auth.signInWithIdToken(
+        provider: OAuthProvider.google,
+        idToken: idToken,
+        accessToken: authorization.accessToken,
+      );
+      return;
+    }
     await client!.auth.signInWithOAuth(
       OAuthProvider.google,
       redirectTo: Env.redirectUrl,
@@ -229,7 +270,18 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> signOut() async {
-    if (!preview) await client?.auth.signOut();
+    if (!preview) {
+      await client?.auth.signOut();
+      if (!kIsWeb &&
+          defaultTargetPlatform == TargetPlatform.android) {
+        try {
+          await _initializeNativeGoogle();
+          await GoogleSignIn.instance.signOut();
+        } catch (_) {
+          // The Supabase session is already cleared, so logout must complete.
+        }
+      }
+    }
     preview = false;
     profile = null;
     role = AdminRole.student;

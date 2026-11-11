@@ -42,7 +42,7 @@ CLI login/password prompts stay on your machine. Never send them through chat.
    - `com.sjelearning.quiz://login-callback/`
 8. Disable unwanted sign-in providers, including email/password and anonymous sign-in, in the dashboard. The app implements Google only.
 
-The app requests Google identity only. It uses Supabase browser OAuth on web and phones. The Android callback is `com.sjelearning.quiz://login-callback/` and must be included in Supabase Auth redirect URLs. Provider setup reference: [Supabase Google sign-in](https://supabase.com/docs/guides/auth/social-sign-in/auth-google).
+The app requests Google identity only. Web uses Supabase browser OAuth; Android uses Google's native account picker and passes the Google tokens to Supabase Auth. The legacy Android callback may remain in the allowlist, but the native flow does not use it. Provider setup reference: [Supabase Google sign-in](https://supabase.com/docs/guides/auth/social-sign-in/auth-google).
 
 Run:
 
@@ -54,7 +54,7 @@ Sign in with Google, complete the mandatory name and mobile number, and confirm 
 
 ## 3. Android Google sign-in
 
-The app uses Supabase browser OAuth. Add `com.sjelearning.quiz://login-callback/` to Supabase Auth redirect URLs; the Android manifest already handles that callback. See [Android sign-in setup](ANDROID_GOOGLE_SIGNIN.md). No Firebase Auth or Android Google OAuth client is required for this flow.
+Register an Android OAuth client for the actual package name `in.sjacademy.quiz_arena` and the signing certificate SHA-1. The existing Web OAuth client ID is passed as `serverClientId` and must remain in Supabase's Google provider settings. See [Android sign-in setup](ANDROID_GOOGLE_SIGNIN.md). No Firebase Auth is used.
 
 ```sh
 flutter run --dart-define-from-file=config/dev.json

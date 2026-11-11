@@ -307,7 +307,6 @@ class _AdminState extends ConsumerState<AdminScreen> {
         throw StateError('Use 1–500 rows');
       }
       final header = rows.first.map((v) => v.toString().trim()).toList();
-      final categories = await repo.categories();
       final valid = <Map<String, dynamic>>[];
       final errors = <String>[];
       for (var i = 1; i < rows.length; i++) {
@@ -315,48 +314,46 @@ class _AdminState extends ConsumerState<AdminScreen> {
           for (var j = 0; j < header.length; j++)
             header[j]: j < rows[i].length ? rows[i][j].toString().trim() : '',
         };
-        final matches = categories
-            .where(
-              (c) =>
-                  c.name.toLowerCase() ==
-                      (row['category'] ?? '').toLowerCase() ||
-                  c.slug == row['category'],
-            )
-            .toList();
         final options = [
-          for (final letter in ['a', 'b', 'c', 'd', 'e', 'f'])
+          for (final letter in ['a', 'b', 'c', 'd'])
             if ((row['option_$letter'] ?? '').isNotEmpty)
               {
                 'option_text': row['option_$letter'],
                 'is_correct': row['correct_option']?.toLowerCase() == letter,
               },
         ];
-        final seconds = int.tryParse(row['time_limit_seconds'] ?? '') ?? 15;
-        if (matches.isEmpty ||
+        final subject = (row['subject']?.isNotEmpty ?? false)
+            ? row['subject']!
+            : (row['category'] ?? '');
+        if (subject.isEmpty ||
+            (row['topic'] ?? '').isEmpty ||
             (row['question'] ?? '').length < 4 ||
-            options.length < 2 ||
+            options.length != 4 ||
             options.where((o) => o['is_correct'] == true).length != 1 ||
             options
                     .map((o) => o['option_text'].toString().toLowerCase())
                     .toSet()
                     .length !=
                 options.length ||
-            seconds < 5 ||
-            seconds > 120 ||
-            !['easy', 'medium', 'hard'].contains(row['difficulty'])) {
+            ![
+              'easy',
+              'medium',
+              'hard',
+            ].contains(row['difficulty']?.toLowerCase())) {
           errors.add(
-            'Row ${i + 1}: check category, question, unique options, answer, difficulty and timer.',
+            'Row ${i + 1}: check subject, topic, question, four different options, answer and difficulty.',
           );
           continue;
         }
         valid.add({
-          'category_id': matches.first.id,
-          'question_text': row['question'],
-          'options': options,
-          'time_limit_seconds': seconds,
-          'difficulty': row['difficulty'],
+          'subject': subject,
+          'topic': row['topic'],
+          'question': row['question'],
+          for (final letter in ['a', 'b', 'c', 'd'])
+            'option_$letter': row['option_$letter'],
+          'correct_answer': row['correct_option']?.toUpperCase(),
+          'difficulty': row['difficulty']?.toLowerCase(),
           'explanation': row['explanation'] ?? '',
-          'status': 'draft',
         });
       }
       if (!mounted) return;
@@ -374,10 +371,10 @@ class _AdminState extends ConsumerState<AdminScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Text(
-                    'Valid rows will be imported as drafts for review.',
+                    'Valid rows become playable immediately. Unknown subjects or topics are rejected.',
                   ),
                   const SizedBox(height: 16),
-                  ...valid.take(5).map((r) => Text('• ${r['question_text']}')),
+                  ...valid.take(5).map((r) => Text('• ${r['question']}')),
                   ...errors
                       .take(20)
                       .map(
@@ -408,19 +405,26 @@ class _AdminState extends ConsumerState<AdminScreen> {
       );
       if (approved == true) {
         var imported = 0;
+        final importErrors = <String>[];
         for (final payload in valid) {
           try {
             await repo.session.client!.rpc(
-              'admin_save_question',
-              params: {'payload': payload},
+              'admin_import_questions',
+              params: {
+                'payload': {
+                  'questions': [payload],
+                },
+              },
             );
             imported++;
-          } catch (_) {}
+          } catch (e) {
+            importErrors.add('${payload['question']}: $e');
+          }
         }
         if (mounted) {
           showMessage(
             context,
-            '$imported of ${valid.length} rows imported as drafts.',
+            '$imported of ${valid.length} rows imported. ${importErrors.isEmpty ? '' : importErrors.take(2).join(' ')}',
           );
           setState(load);
         }

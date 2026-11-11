@@ -50,7 +50,7 @@ export async function verifyRedesign({test,q,asUser,rejects,assert,ids}) {
   await asUser(0,()=>rejects(()=>q("select public.start_practice($1,null,true,'NONEXISTENT',null,25)",[category]),/NOT_ENOUGH_QUESTIONS/));
  });
  await test('Default hierarchy and ten-question daily challenge are database owned',async()=>{
-  assert.ok((await q('select count(*)::int n from public.subtopics where topic_group is not null'))[0].n>=40);
+  assert.equal((await q('select count(*)::int n from public.subtopics'))[0].n,56);
   const daily=(await asUser(0,()=>q('select public.get_today_challenge() data')))[0].data;
   assert.equal(daily.question_count,10);
   await asUser(2,()=>rejects(()=>q("select public.admin_save_setting('questions_per_match','10')"),/INVALID_SETTING/));

@@ -102,8 +102,8 @@ class _QuestionImportState extends State<QuestionImportScreen> {
           'option_d',
           'correct_answer',
           'subject',
+          'topic',
           'difficulty',
-          'explanation',
         ]) {
           if (row[field] is! String || (row[field] as String).trim().isEmpty) {
             throw FormatException('Question $number is missing $field.');
@@ -144,7 +144,7 @@ class _QuestionImportState extends State<QuestionImportScreen> {
           context,
           result['already_imported'] == true
               ? 'This batch has already been imported.'
-              : 'Imported ${result['imported']} draft questions.',
+              : 'Imported ${result['imported']} playable questions.',
         );
       }
     } catch (e) {
@@ -170,7 +170,7 @@ class _QuestionImportState extends State<QuestionImportScreen> {
           Text('Import questions', style: context.type.headlineSmall),
           const SizedBox(height: 8),
           const Text(
-            'Choose a JSON file or paste its contents. Questions are saved as drafts under their subject. New topics are created within that subject.',
+            'Choose a JSON file or paste its contents. Subject and topic names are matched to the approved list, including small spelling differences. Unknown names are rejected. Valid questions become playable immediately.',
           ),
           const SizedBox(height: 16),
           ArenaCard(
@@ -242,14 +242,12 @@ class _QuestionImportState extends State<QuestionImportScreen> {
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(item['question']),
-                subtitle: Text(
-                  '${item['subject']} · ${item['topic'] ?? 'All topics'}',
-                ),
+                subtitle: Text('${item['subject']} · ${item['topic']}'),
               ),
           ],
           const SizedBox(height: 16),
           PrimaryButton(
-            label: batch == null ? 'Preview import' : 'Import drafts',
+            label: batch == null ? 'Preview import' : 'Import questions',
             busy: busy,
             onPressed: batch == null ? validate : save,
           ),

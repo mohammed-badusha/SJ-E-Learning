@@ -20,6 +20,25 @@ for(const f of (await readdir(root+'supabase/migrations')).sort()) {
 }
 try { await db.exec(await readFile(root+'supabase/seed.sql','utf8')); } catch(e) {console.error('SEED FAILED:',e.message);process.exit(1);}
 console.log('Seed OK');
+assert.equal((await db.query('select count(*)::int n from public.questions')).rows[0].n,0,'fresh installations must have an empty question bank');
+assert.deepEqual((await db.query("select c.slug,count(*)::int n from public.subtopics s join public.categories c on c.id=s.category_id group by c.slug order by c.slug")).rows,
+  [{slug:'english',n:12},{slug:'general-awareness',n:14},{slug:'quant',n:15},{slug:'reasoning',n:15}]);
+// Test-only content. The shipped seed stays empty until staff add questions.
+const fixtures=[];
+for(const slug of ['quant','reasoning','general-awareness','english']) {
+ const category=(await db.query('select c.id,s.id topic from public.categories c join public.subtopics s on s.category_id=c.id where c.slug=$1 order by s.sort_order limit 1',[slug])).rows[0];
+ for(let n=0;n<40;n++) {
+  fixtures.push(`insert into public.questions(category_id,subtopic_id,question_text,difficulty,time_limit_seconds,explanation,status)
+    values('${category.id}','${category.topic}','Local test ${slug} ${n}?','${['easy','medium','hard'][n%3]}',15,'Test explanation','published') returning id`);
+ }
+}
+for(const statement of fixtures) {
+ await db.exec('begin');
+ const id=(await db.query(statement)).rows[0].id;
+ await db.query(`insert into public.question_options(question_id,option_text,is_correct,sort_order)
+   values($1,'A',true,0),($1,'B',false,1),($1,'C',false,2),($1,'D',false,3)`,[id]);
+ await db.exec('commit');
+}
 const ids=['11111111-1111-4111-8111-111111111111','22222222-2222-4222-8222-222222222222','33333333-3333-4333-8333-333333333333','44444444-4444-4444-8444-444444444444'];
 const googlePicture='https://lh3.googleusercontent.com/a/test-avatar';
 for(let i=0;i<ids.length;i++) await db.query(`insert into auth.users(id,email,email_confirmed_at,raw_app_meta_data,raw_user_meta_data) values($1,$2,now(),'{"provider":"google"}',$3)`,[ids[i],i===2?'badushamc312@gmail.com':`student${i}@example.com`,i===3?{picture:googlePicture}:{}]);
@@ -266,6 +285,18 @@ await test('Category pages, learner directory and atomic JSON imports enforce ro
    await asUser(0,()=>rejects(()=>q(sql),/ADMIN_REQUIRED/));
  }
 });
+await test('Import normalizes names, publishes immediately, and rejects unknown topics',async()=>{
+ const quant=(await q("select id from public.categories where slug='quant'"))[0].id;
+ assert.equal((await q("select sj_private.resolve_import_name('Quantitative Aptitide') id"))[0].id,quant);
+ assert.equal((await q("select s.name from public.subtopics s where s.id=sj_private.resolve_import_name('Percantage',$1)",[quant]))[0].name,'Percentage');
+ const row={question:'What is 12% of 50?',option_a:'4',option_b:'5',option_c:'6',option_d:'7',correct_answer:'C',subject:'Maths',topic:'Percentages',difficulty:'EASY'};
+ const before=(await q('select count(*)::int n from public.questions'))[0].n;
+ await asUser(2,()=>rejects(()=>q('select public.admin_import_questions($1::jsonb)',[JSON.stringify({questions:[row,{...row,topic:'Imaginary topic'}]})]),/unknown topic/));
+ assert.equal((await q('select count(*)::int n from public.questions'))[0].n,before);
+ await asUser(2,()=>q('select public.admin_import_questions($1::jsonb)',[JSON.stringify({questions:[row]})]));
+ const saved=(await q("select q.status,q.time_limit_seconds,q.explanation,s.name topic from public.questions q join public.subtopics s on s.id=q.subtopic_id where q.question_text='What is 12% of 50?'"))[0];
+ assert.deepEqual(saved,{status:'published',time_limit_seconds:15,explanation:'',topic:'Percentage'});
+});
 await test('Expired daily attempts auto-submit once and award a streak',async()=>{
  const aid=(await q('select id from public.daily_attempts where user_id=$1',[ids[0]]))[0].id;
  await q("update public.daily_attempts set started_at=now()-interval '1 hour' where id=$1",[aid]);
@@ -276,7 +307,8 @@ await test('Expired daily attempts auto-submit once and award a streak',async()=
 });
 await test('Admin question save validates options and preserves used questions',async()=>{
  const category=(await q("select id from public.categories where slug='quant'"))[0].id;
- const payload={category_id:category,topic_name:'Test topic',question_text:'A new test question?',explanation:'A useful explanation.',difficulty:'easy',time_limit_seconds:15,status:'published',options:[{option_text:'First',is_correct:true},{option_text:'Second',is_correct:false},{option_text:'Third',is_correct:false},{option_text:'Fourth',is_correct:false}]};
+ const topic=(await q('select id from public.subtopics where category_id=$1 order by sort_order limit 1',[category]))[0].id;
+ const payload={category_id:category,subtopic_id:topic,question_text:'A new test question?',explanation:'',difficulty:'easy',options:[{option_text:'First',is_correct:true},{option_text:'Second',is_correct:false},{option_text:'Third',is_correct:false},{option_text:'Fourth',is_correct:false}]};
  const saved=(await asUser(2,()=>q('select public.admin_save_question($1::jsonb) id',[JSON.stringify(payload)])))[0].id;
  assert.ok(saved);
  await asUser(2,()=>rejects(()=>q('select public.admin_save_question($1::jsonb)',[JSON.stringify({...payload,options:[{option_text:'Same',is_correct:true},{option_text:'Same',is_correct:false},{option_text:'Third',is_correct:false},{option_text:'Fourth',is_correct:false}]})]),/ONE_CORRECT_AND_UNIQUE_OPTIONS_REQUIRED/));

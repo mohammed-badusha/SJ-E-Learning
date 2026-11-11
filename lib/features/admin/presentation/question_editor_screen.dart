@@ -14,17 +14,15 @@ class QuestionEditorScreen extends ConsumerStatefulWidget {
 }
 
 class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
-  final text = TextEditingController(),
-      explanation = TextEditingController(),
-      seconds = TextEditingController(text: '15');
-  final topicName = TextEditingController(), exam = TextEditingController();
+  final text = TextEditingController(), explanation = TextEditingController();
   final options = <TextEditingController>[];
   int correct = 0;
-  String? category;
-  String difficulty = 'medium', status = 'draft';
+  String? category, topic;
+  String difficulty = 'medium';
   bool saving = false;
   String? error;
   late Future<List<QuizCategory>> categories;
+  Future<List<Map<String, dynamic>>>? topics;
   @override
   void initState() {
     super.initState();
@@ -33,12 +31,10 @@ class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
     if (q != null) {
       text.text = q['question_text'];
       explanation.text = q['explanation'];
-      seconds.text = '${q['time_limit_seconds']}';
       category = q['category_id'];
-      topicName.text = q['topic_name'] ?? '';
-      exam.text = q['exam'] ?? '';
+      topic = q['subtopic_id'];
+      topics = QuizRepository(ref.read(sessionProvider)).subtopics(category!);
       difficulty = q['difficulty'];
-      status = q['status'];
       for (final o in q['options'] as List) {
         options.add(TextEditingController(text: o['option_text']));
         if (o['is_correct'] == true) correct = options.length - 1;
@@ -55,10 +51,7 @@ class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
   @override
   void dispose() {
     text.dispose();
-    topicName.dispose();
-    exam.dispose();
     explanation.dispose();
-    seconds.dispose();
     for (final o in options) {
       o.dispose();
     }
@@ -66,20 +59,16 @@ class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
   }
 
   Future<void> save({bool duplicate = false}) async {
-    final duration = int.tryParse(seconds.text);
     final values = options.map((o) => o.text.trim()).toList();
     if (category == null ||
+        topic == null ||
         values.length != 4 ||
         text.text.trim().length < 4 ||
-        explanation.text.trim().isEmpty ||
-        duration == null ||
-        duration < 5 ||
-        duration > 120 ||
         values.any((o) => o.isEmpty) ||
         values.map((o) => o.toLowerCase()).toSet().length != values.length) {
       setState(
         () => error =
-            'Complete every field. Use unique options and a timer from 5 to 120 seconds.',
+            'Choose a subject and topic, then enter a question and four different options.',
       );
       return;
     }
@@ -98,19 +87,12 @@ class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
                 if (widget.question != null && !duplicate)
                   'id': widget.question!['id'],
                 'category_id': category,
-                'topic_name': topicName.text.trim(),
-                'exam': exam.text.trim(),
-                if (category == widget.question?['category_id'] &&
-                    topicName.text.trim() ==
-                        (widget.question?['topic_name'] ?? ''))
-                  'subtopic_id': widget.question?['subtopic_id'],
+                'subtopic_id': topic,
                 if (widget.question?['image_url'] != null)
                   'image_url': widget.question?['image_url'],
                 'question_text': text.text.trim(),
                 'explanation': explanation.text.trim(),
                 'difficulty': difficulty,
-                'time_limit_seconds': duration,
-                'status': status,
                 'options': [
                   for (var i = 0; i < options.length; i++)
                     {'option_text': values[i], 'is_correct': i == correct},
@@ -124,7 +106,7 @@ class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
         setState(
           () => error = e.toString().contains('QUESTION_ALREADY_USED')
               ? 'This question has been used. Save a new copy to preserve match history.'
-              : 'Couldn’t save. Check your connection and permission.',
+              : 'Couldn’t save. Check the subject, topic, options and connection.',
         );
       }
     } finally {
@@ -139,7 +121,7 @@ class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
       padding: const EdgeInsets.all(24),
       children: [
         Text(
-          widget.question == null ? 'Create a question' : 'Edit question',
+          widget.question == null ? 'Add Question Manually' : 'Edit Question',
           style: context.type.headlineMedium,
         ),
         const SizedBox(height: 24),
@@ -147,7 +129,7 @@ class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
           future: categories,
           builder: (context, snapshot) => DropdownButtonFormField<String>(
             initialValue: category,
-            decoration: const InputDecoration(labelText: 'Category'),
+            decoration: const InputDecoration(labelText: 'Subject'),
             items: [
               for (final c in snapshot.data ?? <QuizCategory>[])
                 DropdownMenuItem(value: c.id, child: Text(c.name)),
@@ -162,28 +144,71 @@ class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
                   ),
                 ),
             ],
-            onChanged: canEdit ? (v) => setState(() => category = v) : null,
+            onChanged: canEdit
+                ? (v) => setState(() {
+                    category = v;
+                    topic = null;
+                    topics = v == null
+                        ? null
+                        : QuizRepository(
+                            ref.read(sessionProvider),
+                          ).subtopics(v);
+                  })
+                : null,
           ),
         ),
         const SizedBox(height: 16),
-        if (widget.question?['topic_name'] != null &&
-            category == widget.question?['category_id'])
-          Padding(
-            padding: const EdgeInsets.only(bottom: 14),
-            child: Text('Topic · ${widget.question!['topic_name']}'),
-          ),
+        DropdownButtonFormField<String>(
+          initialValue: difficulty,
+          decoration: const InputDecoration(labelText: 'Difficulty'),
+          items: [
+            'easy',
+            'medium',
+            'hard',
+          ].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+          onChanged: canEdit ? (v) => setState(() => difficulty = v!) : null,
+        ),
+        const SizedBox(height: 16),
+        FutureBuilder(
+          future: topics,
+          builder: (context, snapshot) {
+            final items = snapshot.data ?? <Map<String, dynamic>>[];
+            return DropdownButtonFormField<String>(
+              key: ValueKey('$category:${items.length}'),
+              initialValue: items.any((item) => item['id'] == topic)
+                  ? topic
+                  : null,
+              decoration: InputDecoration(
+                labelText: 'Topic',
+                helperText: category == null
+                    ? 'Select a subject first'
+                    : snapshot.hasError
+                    ? 'Could not load topics'
+                    : null,
+              ),
+              items: [
+                for (final item in items)
+                  DropdownMenuItem(
+                    value: item['id'] as String,
+                    child: Text(item['name'] as String),
+                  ),
+              ],
+              onChanged: canEdit && snapshot.hasData
+                  ? (v) => setState(() => topic = v)
+                  : null,
+            );
+          },
+        ),
+        const SizedBox(height: 16),
         TextField(
           controller: text,
           enabled: canEdit,
           minLines: 3,
           maxLines: 8,
-          decoration: const InputDecoration(labelText: 'Question text'),
+          decoration: const InputDecoration(labelText: 'Question Statement *'),
         ),
         const SizedBox(height: 20),
-        Text(
-          'Options · select the correct answer',
-          style: context.type.titleMedium,
-        ),
+        Text('Options & Correct Answer', style: context.type.titleMedium),
         const SizedBox(height: 12),
         for (var i = 0; i < options.length; i++)
           Padding(
@@ -231,56 +256,13 @@ class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
           ),
         const SizedBox(height: 16),
         TextField(
-          controller: topicName,
-          enabled: canEdit,
-          decoration: const InputDecoration(
-            labelText: 'Topic (existing or new)',
-          ),
-        ),
-        const SizedBox(height: 16),
-        TextField(
-          controller: exam,
-          enabled: canEdit,
-          decoration: const InputDecoration(labelText: 'Exam (optional)'),
-        ),
-        const SizedBox(height: 16),
-        TextField(
-          controller: seconds,
-          enabled: canEdit,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: 'Time limit (5–120 seconds)',
-          ),
-        ),
-        const SizedBox(height: 16),
-        DropdownButtonFormField<String>(
-          initialValue: difficulty,
-          decoration: const InputDecoration(labelText: 'Difficulty'),
-          items: [
-            'easy',
-            'medium',
-            'hard',
-          ].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
-          onChanged: canEdit ? (v) => setState(() => difficulty = v!) : null,
-        ),
-        const SizedBox(height: 16),
-        TextField(
           controller: explanation,
           enabled: canEdit,
           minLines: 2,
           maxLines: 6,
-          decoration: const InputDecoration(labelText: 'Explanation'),
-        ),
-        const SizedBox(height: 16),
-        DropdownButtonFormField<String>(
-          initialValue: status,
-          decoration: const InputDecoration(labelText: 'Status'),
-          items: [
-            'draft',
-            'published',
-            'archived',
-          ].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
-          onChanged: canEdit ? (v) => setState(() => status = v!) : null,
+          decoration: const InputDecoration(
+            labelText: 'Solution / Explanation (Optional)',
+          ),
         ),
         if (error != null) ...[
           const SizedBox(height: 16),
@@ -292,7 +274,7 @@ class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
         const SizedBox(height: 24),
         if (canEdit) ...[
           PrimaryButton(
-            label: 'Save question',
+            label: 'Save Question',
             busy: saving,
             onPressed: () => save(),
           ),
@@ -306,7 +288,7 @@ class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
     );
     return Scaffold(
       appBar: ArenaBar(
-        title: Text(canEdit ? 'Question editor' : 'Question details'),
+        title: Text(canEdit ? 'Add Question Manually' : 'Question details'),
       ),
       body: LayoutBuilder(
         builder: (context, constraints) => constraints.maxWidth >= 1024

@@ -18,7 +18,7 @@ Follow [SETUP.md](docs/SETUP.md) to install the database and enable Google sign-
 ## Implemented
 
 - Supplied SJ open-book logo, bundled Poppins typography, navy light-first design, light/dark themes, responsive dashboard, podium leaderboard, subject cards, progress screens and reusable game controls.
-- Google sign-in through Supabase browser OAuth on Android and web, mandatory name/India-phone completion with optional illustrated portraits or a cropped gallery photo, typed routes, role guard, role refresh on resume and safe sign-out.
+- Google sign-in through the native account picker on Android and Supabase browser OAuth on web, with Supabase owning both sessions; mandatory name/India-phone completion with optional illustrated portraits or a cropped gallery photo, typed routes, role guard, role refresh on resume and safe sign-out. Android requires a Google Cloud OAuth client for the app's package and signing certificate; see [Android setup](docs/ANDROID_GOOGLE_SIGNIN.md).
 - Signed-in learners see each other's chosen profile pictures across matches, results, leaderboards and history. Google account photos appear by default when provided by Google. Gallery photos are stored as small private database thumbnails and served through an authenticated RPC; replacing a picture removes its old thumbnail.
 - Home, database categories/subtopics, timed/untimed practice, explanations, results and local answer-review history.
 - Server-authoritative human matching and bot fallback, row-locked single-match creation, immutable question snapshots, scoring, fixed battle trophy payouts (+15 win, −5 loss, 0 draw), XP, bot plans, deadline/grace enforcement, first-answer locking, private Realtime broadcasts, server-owned advancement, heartbeat/reconnect/forfeit handling, results and review.
@@ -26,9 +26,9 @@ Follow [SETUP.md](docs/SETUP.md) to install the database and enable Google sign-
 - Trophy/weekly/daily leaderboards, a weekly top-three podium with profile portraits, Bronze (0), Silver (1,000), Gold (3,000), Platinum (6,000) and Diamond (10,000) thresholds, tier progress, fire streak indicators, profile stats, match history and settings. New accounts start at 0 trophies; trophies cannot go negative and falling below a threshold demotes the tier.
 - Original bundled game cues and instrumental background music, independent saved volume controls, lifecycle pausing, and server-reveal-only answer sounds.
 - Detailed battle reports with both players’ timing, accuracy and score breakdowns, cumulative score charts, subject accuracy and answer-by-answer review.
-- Role-protected responsive admin dashboard, question editor/preview, CSV/XLSX draft import, category management, staff roles, bans, reports, daily auto-scheduling, analytics and settings.
+- Role-protected responsive admin dashboard, question editor/preview, CSV/XLSX and JSON import, category management, staff roles, bans, reports, daily auto-scheduling, analytics and settings.
 - Account anonymisation/deletion Edge Function and in-app deletion entry point.
-- Versioned migrations, first-install SQL package, deterministic sample seeds (4 categories, 12 topics, 160 questions, 20 bots), local Postgres checks and CI workflow.
+- Versioned migrations, first-install SQL package, four subjects with 56 approved topics, an empty question bank for academy content, local Postgres checks and CI workflow.
 
 ## Verification
 
@@ -50,12 +50,11 @@ See [BUILD_STATUS.md](docs/BUILD_STATUS.md) for remaining work and acceptance ga
 
 ```sh
 dart run build_runner build --delete-conflicting-outputs
-python3 tools/generate_seed.py
-python3 tools/prepare_setup.py
+node tools/prepare_setup.mjs
 flutter test tools/render_brand.dart
 ```
 
-Seeds are educational examples, not a reviewed exam question bank. Review explanations and replace them with academy-approved content before production. Question snapshots preserve old matches when the bank changes; used questions are duplicated for correction rather than rewritten.
+The question bank starts empty. Staff add playable questions through the editor or import. The approved subject and topic catalog is in migration `202611110023_question_catalog_reset.sql`; the seed only adds configuration and badges. Question snapshots preserve old matches when the bank changes; used questions are duplicated for correction rather than rewritten.
 
 The approved light UI refinement is documented in [docs/ui/UNSLOP.md](docs/ui/UNSLOP.md). See [the rewards and reports update](docs/ui/REWARDS_AND_REPORTS.md) and [audio authoring guide](docs/audio/README.md) for the latest additions. ElevenLabs authoring uses a local ignored `.env`; no authoring credential is required at runtime.
 

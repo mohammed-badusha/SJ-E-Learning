@@ -1,0 +1,47 @@
+import { PGlite } from '@electric-sql/pglite';
+import { readFile, readdir } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import assert from 'node:assert/strict';
+
+const root = fileURLToPath(new URL('../../', import.meta.url));
+const db = new PGlite();
+await db.exec(`create role anon; create role authenticated; create role service_role bypassrls;
+create schema auth; create schema realtime;
+create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,raw_user_meta_data jsonb default '{}',raw_app_meta_data jsonb default '{}');
+create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
+create table realtime.messages(id int,topic text); alter table realtime.messages enable row level security;
+create function realtime.topic() returns text language sql stable as $$ select current_setting('realtime.topic',true) $$;
+create table realtime.sent(topic text,event text,payload jsonb);
+create function realtime.send(payload jsonb,event text,topic text,private boolean) returns void language sql as $$ insert into realtime.sent values(topic,event,payload) $$;`);
+const reset = '202611110023_question_catalog_reset.sql';
+for (const name of (await readdir(root + 'supabase/migrations')).sort()) {
+  if (name === reset || name.includes('scheduler')) continue;
+  await db.exec(await readFile(root + 'supabase/migrations/' + name, 'utf8'));
+}
+const user = '11111111-1111-4111-8111-111111111111';
+const opponent = '22222222-2222-4222-8222-222222222222';
+await db.query("insert into auth.users(id,email) values($1,'historical@example.com')", [user]);
+await db.query("insert into auth.users(id,email) values($1,'opponent@example.com')", [opponent]);
+const category = (await db.query("select id from public.categories where slug='quant'")).rows[0].id;
+const oldTopic = (await db.query('select id from public.subtopics where category_id=$1 limit 1', [category])).rows[0].id;
+await db.exec('begin');
+const question = (await db.query("insert into public.questions(category_id,subtopic_id,question_text,difficulty,explanation,status) values($1,$2,'Historic question?','easy','Historic explanation','published') returning id", [category, oldTopic])).rows[0].id;
+await db.query("insert into public.question_options(question_id,option_text,is_correct,sort_order) values($1,'A',true,0),($1,'B',false,1),($1,'C',false,2),($1,'D',false,3)", [question]);
+await db.exec('commit');
+const snapshot = { question_text: 'Historic question?', explanation: 'Historic explanation', options: [] };
+const match = (await db.query("insert into public.matches(category_id,mode,player1_id,player2_id,status) values($1,'live',$2,$3,'completed') returning id", [category, user, opponent])).rows[0].id;
+await db.query('insert into public.match_questions(match_id,question_index,question_id,snapshot,option_order) values($1,0,$2,$3,$4)', [match, question, snapshot, []]);
+const challenge = (await db.query("insert into public.daily_challenges(challenge_date,title,status) values('2026-11-01','Historic','published') returning id")).rows[0].id;
+await db.query('insert into public.daily_challenge_questions(challenge_id,question_index,question_id,snapshot) values($1,0,$2,$3)', [challenge, question, snapshot]);
+await db.query('insert into public.daily_attempts(challenge_id,user_id,completed_at) values($1,$2,now())', [challenge, user]);
+await db.query("insert into public.practice_attempts(user_id,timed,questions) values($1,false,$2)", [user, [snapshot]]);
+await db.query("insert into public.question_reports(question_id,reason) values($1,'unclear')", [question]);
+await db.exec(await readFile(root + 'supabase/migrations/' + reset, 'utf8'));
+assert.equal((await db.query('select count(*)::int n from public.questions')).rows[0].n, 0);
+assert.equal((await db.query('select count(*)::int n from public.subtopics')).rows[0].n, 56);
+assert.deepEqual((await db.query('select question_id,snapshot from public.match_questions where match_id=$1', [match])).rows[0], {question_id:null,snapshot});
+assert.deepEqual((await db.query('select question_id,snapshot from public.daily_challenge_questions where challenge_id=$1', [challenge])).rows[0], {question_id:null,snapshot});
+assert.equal((await db.query('select count(*)::int n from public.daily_attempts where challenge_id=$1', [challenge])).rows[0].n, 1);
+assert.equal((await db.query('select count(*)::int n from public.practice_attempts where user_id=$1', [user])).rows[0].n, 1);
+assert.equal((await db.query('select question_snapshot from public.question_reports')).rows[0].question_snapshot, 'Historic question?');
+console.log('Question reset preserved historical match, daily, practice and report snapshots.');

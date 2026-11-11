@@ -68,6 +68,12 @@ class _DailyState extends ConsumerState<DailyScreen> {
             return const SkeletonList(layout: SkeletonLayout.quiz);
           }
           final d = snapshot.data!;
+          if (d['available'] == false) {
+            return const EmptyState(
+              title: 'Daily Challenge is coming soon',
+              message: 'New questions are being added. Check back later.',
+            );
+          }
           return ListView(
             padding: const EdgeInsets.all(24),
             children: [
