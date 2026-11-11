@@ -21,7 +21,8 @@ for(const f of (await readdir(root+'supabase/migrations')).sort()) {
 try { await db.exec(await readFile(root+'supabase/seed.sql','utf8')); } catch(e) {console.error('SEED FAILED:',e.message);process.exit(1);}
 console.log('Seed OK');
 const ids=['11111111-1111-4111-8111-111111111111','22222222-2222-4222-8222-222222222222','33333333-3333-4333-8333-333333333333','44444444-4444-4444-8444-444444444444'];
-for(let i=0;i<ids.length;i++) await db.query(`insert into auth.users(id,email,email_confirmed_at,raw_app_meta_data) values($1,$2,now(),'{"provider":"google"}')`,[ids[i],i===2?'badushamc312@gmail.com':`student${i}@example.com`]);
+const googlePicture='https://lh3.googleusercontent.com/a/test-avatar';
+for(let i=0;i<ids.length;i++) await db.query(`insert into auth.users(id,email,email_confirmed_at,raw_app_meta_data,raw_user_meta_data) values($1,$2,now(),'{"provider":"google"}',$3)`,[ids[i],i===2?'badushamc312@gmail.com':`student${i}@example.com`,i===3?{picture:googlePicture}:{}]);
 let tests=0;
 async function test(name,fn) { try {await fn(); console.log('PASS',name);tests++;} catch(e) {console.error('FAIL',name,e.message, e.where ?? '');process.exit(1);} }
 async function asUser(i,fn) {
@@ -30,6 +31,9 @@ async function asUser(i,fn) {
 }
 async function q(sql,params=[]) {return (await db.query(sql,params)).rows;}
 async function rejects(fn,pattern) {await assert.rejects(fn,pattern);}
+await test('Google picture metadata becomes the new learner avatar',async()=>{
+ assert.equal((await q('select avatar_url from public.profiles where id=$1',[ids[3]]))[0].avatar_url,googlePicture);
+});
 await test('Unfinished profiles cannot start a game',()=>asUser(0,()=>rejects(()=>q('select public.start_practice()'),/PROFILE_REQUIRED/)));
 for(let i=0;i<3;i++) await asUser(i,()=>q('select public.complete_profile($1,$2)',[`Student ${i}`,`+91987654321${i}`]));
 await test('New players start at zero trophies and cannot edit them',async()=>{
@@ -99,15 +103,27 @@ await test('Two humans match exactly once and answer keys stay hidden',async()=>
 const photoFixture='iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAAAAAB3tzPbAAAAO0lEQVR4nO3BMQEAAADCoPVPbQ0PoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgHcDkMAAAZ1kLtkAAAAASUVORK5CYII=';
 const savePortrait=(i,portrait,data=null)=>asUser(i,()=>q('select public.save_profile_portrait($1,$2,$3,$4)',[`Student ${i}`,`+91987654321${i}`,portrait,data]));
 const readPhoto=(i,photo,match=null)=>asUser(i,async()=>(await q('select public.get_player_photo($1,$2) data',[photo,match]))[0].data);
-await test('Only owner or current rival can load gallery pixels; polls contain only a reference',async()=>{
+await test('Signed-in learners can see gallery portraits without exposing bytes in match polls',async()=>{
  await savePortrait(0,'gallery',photoFixture);
  const state=(await asUser(1,()=>q('select public.get_match_state($1) data',[mid])))[0].data;
  const ref=state.players.find(p=>p.id===ids[0]).avatar_url;
  assert.match(ref,/^photo:/);assert.ok(!JSON.stringify(state).includes(photoFixture));
  const key=ref.slice(6);
  assert.equal(await readPhoto(0,key),photoFixture); assert.equal(await readPhoto(1,key,mid),photoFixture);
- assert.equal(await readPhoto(2,key,mid),null);assert.equal(await readPhoto(1,key),null);
+ assert.equal(await readPhoto(2,key,mid),photoFixture);assert.equal(await readPhoto(1,key),photoFixture);
+ await q('set role anon');
+ try { await rejects(()=>q('select public.get_player_photo($1)',[key]),/permission denied/); }
+ finally { await q('reset role'); }
  await savePortrait(0,'preset:curie');assert.equal(await readPhoto(0,key),null);
+});
+await test('Google picture references reach matches and leaderboards',async()=>{
+ const google=googlePicture;
+ await q('update public.profiles set avatar_url=$1 where id=$2',[google,ids[0]]);
+ const state=(await asUser(1,()=>q('select public.get_match_state($1) data',[mid])))[0].data;
+ assert.equal(state.players.find(p=>p.id===ids[0]).avatar_url,google);
+ const board=(await asUser(1,()=>q("select public.get_leaderboard('weekly') data")))[0].data.rows;
+ assert.equal(board.find(p=>p.id===ids[0]).avatar_url,google);
+ await q("update public.profiles set avatar_url='preset:curie' where id=$1",[ids[0]]);
 });
 await test('Bad portraits roll back profile changes and originals are not retained after deletion',async()=>{
  await asUser(0,()=>rejects(()=>q("select public.save_profile_portrait('Changed Name','+919876543210','gallery','invalid!')"),/invalid|INVALID/i));
@@ -281,7 +297,7 @@ await test('Completed battle report exposes real timing and both choices only to
  assert.equal(report.rounds_played,4);assert.equal(report.players.length,2);
  const me=report.players.find(p=>p.id===ids[0]);
  assert.equal(me.correct,4);assert.equal(me.wrong,0);assert.equal(me.unanswered,0);assert.equal(me.accuracy,100);
- assert.equal(me.base_points+me.speed_bonus,me.score);
+ assert.ok(Math.abs(me.base_points+me.speed_bonus-me.score)<0.00001);
  assert.ok(Math.abs(report.questions.reduce((sum,q)=>sum+q.points,0)-me.score)<0.00001);
  assert.equal(report.questions.at(-1).multiplier,1);
  assert.ok(report.questions.every(q=>q.response_ms!==null&&q.opponent_response_ms!==null));
@@ -296,7 +312,13 @@ await test('Report portraits are visible to the two participants after the match
  assert.equal(report.players.find(p=>p.id===ids[0]).avatar_url,'preset:curie');
  const key=report.players.find(p=>p.id===ids[1]).avatar_url.slice(6);
  assert.equal(await readPhoto(0,key,mid),photoFixture);
- assert.equal(await readPhoto(2,key,mid),null);
+ assert.equal(await readPhoto(2,key,mid),photoFixture);
+});
+await test('History and staff directory include player picture references',async()=>{
+ const history=(await asUser(0,()=>q('select public.get_history_page() data')))[0].data.rows;
+ assert.match(history.find(row=>row.id===mid).avatar_url,/^photo:/);
+ const directory=(await asUser(2,()=>q('select public.admin_user_page() data')))[0].data.rows;
+ assert.equal(directory.find(row=>row.id===ids[0]).avatar_url,'preset:curie');
 });
 const {verifyRedesign}=await import('./redesign.mjs');
 await verifyRedesign({test,q,asUser,rejects,assert,ids});

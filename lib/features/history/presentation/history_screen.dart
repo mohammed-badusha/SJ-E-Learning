@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../shared/widgets.dart';
+import '../../../shared/player_avatar.dart';
 import '../../auth/data/session.dart';
 import '../../practice/data/quiz_repository.dart';
 import '../../results/presentation/battle_result_screen.dart';
@@ -135,11 +136,13 @@ class _HistoryState extends ConsumerState<HistoryScreen> {
                   ),
                 ...rows.map(
                   (row) => ListTile(
-                    leading: Icon(
-                      row['mode'] == 'battle'
-                          ? Icons.bolt_rounded
-                          : Icons.fact_check_outlined,
-                    ),
+                    leading: row['mode'] == 'battle'
+                        ? PlayerAvatar(
+                            name: row['title'] as String? ?? 'Opponent',
+                            reference: row['avatar_url'] as String?,
+                            size: 40,
+                          )
+                        : const Icon(Icons.fact_check_outlined),
                     title: Text(
                       row['mode'] == 'battle'
                           ? 'You vs ${row['title']}'

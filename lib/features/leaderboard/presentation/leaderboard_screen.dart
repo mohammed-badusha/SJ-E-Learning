@@ -75,6 +75,7 @@ class _LeaderboardState extends ConsumerState<LeaderboardScreen> {
                     {
                       'id': entry.$2.$1,
                       'full_name': entry.$2.$2,
+                      'avatar_url': 'preset:explorer',
                       'rating': entry.$2.$3,
                       'trophies': entry.$2.$3,
                       'metric': type == 'all_time' ? entry.$2.$3 : entry.$2.$4,
@@ -244,6 +245,9 @@ class _LeaderboardState extends ConsumerState<LeaderboardScreen> {
                     _Standing(
                       entry: mine,
                       name: session.profile!.fullName,
+                      avatarUrl:
+                          mine?['avatar_url'] as String? ??
+                          session.profile!.avatarUrl,
                       unit: unit,
                     ),
                     if (rows.isEmpty) ...[
@@ -384,10 +388,12 @@ class _Standing extends StatelessWidget {
   const _Standing({
     required this.entry,
     required this.name,
+    required this.avatarUrl,
     required this.unit,
   });
   final Map<String, dynamic>? entry;
   final String name, unit;
+  final String? avatarUrl;
   @override
   Widget build(BuildContext context) => ArenaPanel(
     padding: const EdgeInsets.all(18),
@@ -404,7 +410,9 @@ class _Standing extends StatelessWidget {
             style: context.type.titleSmall?.copyWith(color: arenaInk),
           ),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 10),
+        PlayerAvatar(name: name, reference: avatarUrl, size: 38),
+        const SizedBox(width: 10),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -525,7 +533,10 @@ class _Podium extends StatelessWidget {
                         ),
                         child: PlayerAvatar(
                           name: entries[index]['full_name'] as String,
-                          reference: portrait?['avatar_url'] as String?,
+                          reference:
+                              (portrait?['avatar_url'] ??
+                                      entries[index]['avatar_url'])
+                                  as String?,
                           draft: photo,
                           size: size,
                         ),
@@ -631,7 +642,13 @@ class _RankingRow extends StatelessWidget {
                     ),
                   ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 8),
+          PlayerAvatar(
+            name: entry['full_name'] as String,
+            reference: entry['avatar_url'] as String?,
+            size: 36,
+          ),
+          const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

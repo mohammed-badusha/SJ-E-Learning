@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme.dart';
 import '../../../shared/widgets.dart';
+import '../../../shared/player_avatar.dart';
 import '../../auth/domain/models.dart';
 import '../../practice/data/quiz_repository.dart';
 
@@ -172,6 +173,12 @@ class _AdminDirectoryState extends State<AdminDirectory> {
             children: [
               Text('Learner profile', style: context.type.headlineSmall),
               const SizedBox(height: 12),
+              PlayerAvatar(
+                name: row['full_name'] as String? ?? 'Learner',
+                reference: row['avatar_url'] as String?,
+                size: 72,
+              ),
+              const SizedBox(height: 12),
               for (final field in userColumns.entries)
                 ListTile(
                   contentPadding: EdgeInsets.zero,
@@ -277,7 +284,12 @@ class _AdminDirectoryState extends State<AdminDirectory> {
                         child: ListTile(
                           onTap: () => open(row),
                           leading: users
-                              ? AvatarBadge(name: row['full_name'], size: 38)
+                              ? PlayerAvatar(
+                                  name:
+                                      row['full_name'] as String? ?? 'Learner',
+                                  reference: row['avatar_url'] as String?,
+                                  size: 38,
+                                )
                               : Icon(
                                   row['status'] == 'published'
                                       ? Icons.check_circle_outline

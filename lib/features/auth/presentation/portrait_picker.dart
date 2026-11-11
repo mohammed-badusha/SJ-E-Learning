@@ -146,7 +146,7 @@ class _PortraitPickerState extends State<PortraitPicker> {
                   children: [
                     Text('Player picture', style: context.type.titleMedium),
                     Text(
-                      'Optional · visible to your opponent',
+                      'Optional · visible to other learners',
                       style: context.type.bodySmall,
                     ),
                   ],

@@ -11,19 +11,16 @@ const portraits = {
   'raman': 'C. V. Raman',
   'explorer': 'Astronomer',
 };
-typedef _PhotoKey = ({String id, String? match});
-final _photoProvider = FutureProvider.autoDispose.family<Uint8List?, _PhotoKey>(
-  (ref, key) async {
-    final encoded = await ref
-        .watch(sessionProvider)
-        .client
-        ?.rpc(
-          'get_player_photo',
-          params: {'photo_id': key.id, 'match_id': key.match},
-        );
-    return encoded is String ? base64Decode(encoded) : null;
-  },
-);
+final _photoProvider = FutureProvider.autoDispose.family<Uint8List?, String>((
+  ref,
+  photoId,
+) async {
+  final encoded = await ref
+      .watch(sessionProvider)
+      .client
+      ?.rpc('get_player_photo', params: {'photo_id': photoId});
+  return encoded is String ? base64Decode(encoded) : null;
+});
 
 class PlayerAvatar extends ConsumerWidget {
   const PlayerAvatar({
@@ -48,10 +45,7 @@ class PlayerAvatar extends ConsumerWidget {
         portraits.containsKey(key.substring(7))) {
       image = AssetImage('assets/avatars/${key.substring(7)}.webp');
     } else if (key.startsWith('photo:')) {
-      final data = ref
-          .watch(_photoProvider((id: key.substring(6), match: matchId)))
-          .asData
-          ?.value;
+      final data = ref.watch(_photoProvider(key.substring(6))).asData?.value;
       if (data != null) image = MemoryImage(data);
     } else if (key.startsWith('https://') &&
         Uri.tryParse(key)?.host.endsWith('.googleusercontent.com') == true) {

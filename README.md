@@ -19,6 +19,7 @@ Follow [SETUP.md](docs/SETUP.md) to install the database and enable Google sign-
 
 - Supplied SJ open-book logo, bundled Poppins typography, navy light-first design, light/dark themes, responsive dashboard, podium leaderboard, subject cards, progress screens and reusable game controls.
 - Google sign-in through Supabase browser OAuth on Android and web, mandatory name/India-phone completion with optional illustrated portraits or a cropped gallery photo, typed routes, role guard, role refresh on resume and safe sign-out.
+- Signed-in learners see each other's chosen profile pictures across matches, results, leaderboards and history. Google account photos appear by default when provided by Google. Gallery photos are stored as small private database thumbnails and served through an authenticated RPC; replacing a picture removes its old thumbnail.
 - Home, database categories/subtopics, timed/untimed practice, explanations, results and local answer-review history.
 - Server-authoritative human matching and bot fallback, row-locked single-match creation, immutable question snapshots, scoring, fixed battle trophy payouts (+15 win, −5 loss, 0 draw), XP, bot plans, deadline/grace enforcement, first-answer locking, private Realtime broadcasts, server-owned advancement, heartbeat/reconnect/forfeit handling, results and review.
 - Daily shared questions, one resumable attempt, server-owned deadlines, automatic completion, IST date boundaries, streak freezes and badges.
