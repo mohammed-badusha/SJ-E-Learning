@@ -354,9 +354,60 @@ await test('History and staff directory include player picture references',async
 });
 const {verifyRedesign}=await import('./redesign.mjs');
 await verifyRedesign({test,q,asUser,rejects,assert,ids});
+await test('Each learner has a private bot bag with no repeats until the cycle ends',async()=>{
+ await q('delete from public.player_bot_cycles where user_id in ($1,$2)',[ids[0],ids[3]]);
+ const available=(await q('select id from public.profiles where is_bot and not is_banned and deleted_at is null')).map(row=>row.id);
+ assert.ok(available.length>=130);
+ const first=(await q('select sj_private.next_bot_for_player($1) id',[ids[0]]))[0].id;
+ const other=(await q('select sj_private.next_bot_for_player($1) id',[ids[3]]))[0].id;
+ const seen=new Set([first]);
+ for(let i=1;i<available.length;i++) {
+  const selected=(await q('select sj_private.next_bot_for_player($1) id',[ids[0]]))[0].id;
+  assert.ok(!seen.has(selected),`bot repeated before cycle end: ${selected}`);
+  seen.add(selected);
+ }
+ assert.deepEqual(seen,new Set(available));
+ const state=(await q('select cardinality(bot_ids)::int size,next_index from public.player_bot_cycles where user_id=$1',[ids[0]]))[0];
+ assert.deepEqual(state,{size:available.length,next_index:available.length});
+ assert.equal((await q('select next_index from public.player_bot_cycles where user_id=$1',[ids[3]]))[0].next_index,1);
+ assert.ok(available.includes(other));
+ assert.ok(available.includes((await q('select sj_private.next_bot_for_player($1) id',[ids[0]]))[0].id),'next cycle reshuffles available bots');
+ await asUser(0,()=>rejects(()=>q('select * from public.player_bot_cycles'),/permission denied/));
+});
+await test('New bots join the unused tail and disabled bots leave it',async()=>{
+ const player=ids[3];
+ const before=(await q('select bot_ids,next_index from public.player_bot_cycles where user_id=$1',[player]))[0];
+ const upcoming=before.bot_ids[before.next_index];
+ const name=`Shuffle test ${Date.now()}`;
+ await q("insert into sj_private.bot_names(name,avatar_color,experience_level,play_style) values($1,'#5B4CFF',8,'Balanced')",[name]);
+ const newBot=(await q('select id from public.profiles where full_name=$1 and is_bot',[name]))[0].id;
+ await q('update public.profiles set is_banned=true where id=$1',[upcoming]);
+ const selected=(await q('select sj_private.next_bot_for_player($1) id',[player]))[0].id;
+ const after=(await q('select bot_ids,next_index from public.player_bot_cycles where user_id=$1',[player]))[0];
+ assert.notEqual(selected,upcoming);
+ assert.ok(after.bot_ids.includes(newBot));
+ assert.ok(!after.bot_ids.includes(upcoming));
+ assert.equal(after.next_index,2);
+ assert.equal(new Set(after.bot_ids).size,after.bot_ids.length);
+ assert.equal((await q('select count(*)::int n from public.player_bot_cycles where user_id=$1',[player]))[0].n,1);
+ await q('delete from sj_private.bot_names where name=$1',[name]);
+ assert.equal((await q('select is_banned from public.profiles where id=$1',[newBot]))[0].is_banned,true);
+ await q('select sj_private.next_bot_for_player($1)',[player]);
+ const reconciled=(await q('select bot_ids,next_index from public.player_bot_cycles where user_id=$1',[player]))[0];
+ assert.ok(!reconciled.bot_ids.slice(reconciled.next_index).includes(newBot));
+ await q('update public.profiles set is_banned=true where id=$1',[selected]);
+ await q('select sj_private.next_bot_for_player($1)',[player]);
+ await q('update public.profiles set is_banned=false where id=$1',[selected]);
+ await q('select sj_private.next_bot_for_player($1)',[player]);
+ const reenabled=(await q('select bot_ids,next_index from public.player_bot_cycles where user_id=$1',[player]))[0];
+ assert.ok(reenabled.bot_ids.slice(0,reenabled.next_index).includes(selected));
+ assert.ok(!reenabled.bot_ids.slice(reenabled.next_index).includes(selected));
+});
 await test('Account deletion is service-only and removes personal data without breaking history',async()=>{
  await asUser(0,()=>rejects(()=>q('select public.anonymize_account($1)',[ids[1]]),/permission denied/));
+ await q('select sj_private.next_bot_for_player($1)',[ids[1]]);
  await q('select public.anonymize_account($1)',[ids[1]]);
+ assert.equal((await q('select count(*)::int n from public.player_bot_cycles where user_id=$1',[ids[1]]))[0].n,0);
  assert.equal((await q('select count(*)::int n from sj_private.player_photos where owner_id=$1',[ids[1]]))[0].n,0);
  await q('delete from auth.users where id=$1',[ids[1]]);
  const p=(await q('select full_name,email,phone,auth_user_id,profile_completed from public.profiles where id=$1',[ids[1]]))[0];
