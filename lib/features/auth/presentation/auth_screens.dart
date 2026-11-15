@@ -141,21 +141,9 @@ class _LoginState extends ConsumerState<LoginScreen> {
                                   ),
                                 ),
                                 const Spacer(),
-                                SizedBox(
-                                  width: double.infinity,
+                                _FadedLoginIllustration(
+                                  screenWidth: viewport.maxWidth,
                                   height: (screenHeight * 0.37).clamp(220, 320),
-                                  child: ClipRect(
-                                    child: Transform.scale(
-                                      scale: 1.08,
-                                      child: Image.asset(
-                                        'assets/images/image.png',
-                                        fit: BoxFit.cover,
-                                        alignment: Alignment.center,
-                                        errorBuilder: (_, __, ___) =>
-                                            const SizedBox.shrink(),
-                                      ),
-                                    ),
-                                  ),
                                 ),
                                 const SizedBox(height: 8),
 
@@ -330,6 +318,68 @@ class _LoginState extends ConsumerState<LoginScreen> {
       ),
     );
   }
+}
+
+class _FadedLoginIllustration extends StatelessWidget {
+  const _FadedLoginIllustration({
+    required this.screenWidth,
+    required this.height,
+  });
+
+  final double screenWidth;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: double.infinity,
+    height: height,
+    child: OverflowBox(
+      alignment: Alignment.center,
+      minWidth: screenWidth,
+      maxWidth: screenWidth,
+      child: ShaderMask(
+        blendMode: BlendMode.dstIn,
+        shaderCallback: (bounds) => const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.transparent,
+            Colors.white,
+            Colors.white,
+            Colors.transparent,
+          ],
+          stops: [0, 0.2, 0.84, 1],
+        ).createShader(bounds),
+        child: ShaderMask(
+          blendMode: BlendMode.dstIn,
+          shaderCallback: (bounds) => const LinearGradient(
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            colors: [
+              Colors.transparent,
+              Colors.white,
+              Colors.white,
+              Colors.transparent,
+            ],
+            stops: [0, 0.14, 0.86, 1],
+          ).createShader(bounds),
+          child: ClipRect(
+            child: Transform.scale(
+              scale: 1.08,
+              child: Image.asset(
+                'assets/images/image.png',
+                width: screenWidth,
+                height: height,
+                fit: BoxFit.cover,
+                alignment: Alignment.center,
+                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 class CompleteProfileScreen extends ConsumerStatefulWidget {
