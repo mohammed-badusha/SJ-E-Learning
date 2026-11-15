@@ -57,25 +57,6 @@ class _LoginState extends ConsumerState<LoginScreen> {
         backgroundColor: isDark ? const Color(0xFF10192B) : Colors.white,
         body: Stack(
           children: [
-            // Background image — transparent, clipped to hide red corners
-            Positioned.fill(
-              child: ClipRect(
-                child: OverflowBox(
-                  alignment: Alignment.center,
-                  maxWidth: MediaQuery.sizeOf(context).width * 1.15,
-                  maxHeight: screenHeight * 1.15,
-                  child: Opacity(
-                    opacity: isDark ? 0.18 : 0.22,
-                    child: Image.asset(
-                      'assets/images/image.png',
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
             // Main content
             SafeArea(
               child: LayoutBuilder(
@@ -90,7 +71,9 @@ class _LoginState extends ConsumerState<LoginScreen> {
                             padding: const EdgeInsets.symmetric(horizontal: 28),
                             child: Column(
                               children: [
-                                SizedBox(height: screenHeight * 0.08),
+                                SizedBox(
+                                  height: (screenHeight * 0.02).clamp(12, 24),
+                                ),
 
                                 // SJ Logo — kept unchanged
                                 Container(
@@ -108,7 +91,7 @@ class _LoginState extends ConsumerState<LoginScreen> {
                                   ),
                                   child: const SJMark(size: 48),
                                 ),
-                                const SizedBox(height: 16),
+                                const SizedBox(height: 10),
 
                                 // App name — kept unchanged
                                 Text(
@@ -117,7 +100,7 @@ class _LoginState extends ConsumerState<LoginScreen> {
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
-                                const SizedBox(height: 40),
+                                const SizedBox(height: 24),
 
                                 // Tagline label
                                 Text(
@@ -129,7 +112,7 @@ class _LoginState extends ConsumerState<LoginScreen> {
                                     color: context.tokens.muted,
                                   ),
                                 ),
-                                const SizedBox(height: 14),
+                                const SizedBox(height: 10),
 
                                 // Headline
                                 Arrive(
@@ -146,7 +129,7 @@ class _LoginState extends ConsumerState<LoginScreen> {
                                     ),
                                   ),
                                 ),
-                                const SizedBox(height: 12),
+                                const SizedBox(height: 8),
 
                                 // Subtitle
                                 Text(
@@ -157,7 +140,24 @@ class _LoginState extends ConsumerState<LoginScreen> {
                                     height: 1.5,
                                   ),
                                 ),
-                                const SizedBox(height: 36),
+                                const Spacer(),
+                                SizedBox(
+                                  width: double.infinity,
+                                  height: (screenHeight * 0.37).clamp(220, 320),
+                                  child: ClipRect(
+                                    child: Transform.scale(
+                                      scale: 1.08,
+                                      child: Image.asset(
+                                        'assets/images/image.png',
+                                        fit: BoxFit.cover,
+                                        alignment: Alignment.center,
+                                        errorBuilder: (_, __, ___) =>
+                                            const SizedBox.shrink(),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
 
                                 // Google Sign In Button
                                 SizedBox(
@@ -254,12 +254,11 @@ class _LoginState extends ConsumerState<LoginScreen> {
                                     ),
                                   ),
 
-                                SizedBox(height: screenHeight * 0.06),
-                                const Spacer(),
+                                const SizedBox(height: 20),
 
                                 // Divider line
                                 Divider(color: context.tokens.line),
-                                const SizedBox(height: 16),
+                                const SizedBox(height: 12),
 
                                 // Trust badges
                                 Row(
@@ -304,7 +303,7 @@ class _LoginState extends ConsumerState<LoginScreen> {
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 20),
+                                const SizedBox(height: 14),
 
                                 // Footer
                                 Text(
@@ -315,7 +314,7 @@ class _LoginState extends ConsumerState<LoginScreen> {
                                     color: context.tokens.muted,
                                   ),
                                 ),
-                                const SizedBox(height: 32),
+                                const SizedBox(height: 20),
                               ],
                             ),
                           ),

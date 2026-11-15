@@ -76,6 +76,7 @@ void main() {
         for (final path in [
           'assets/brand/sj-logo-source.png',
           'assets/brand/google-g.png',
+          'assets/images/image.png',
           for (final id in ['curie', 'raman', 'einstein', 'explorer'])
             'assets/avatars/$id.webp',
         ]) {
