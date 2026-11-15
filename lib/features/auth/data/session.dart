@@ -6,6 +6,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/env.dart';
+import '../../../shared/avatar_cache.dart';
 import '../domain/models.dart';
 part 'session.g.dart';
 
@@ -39,9 +40,12 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
   SessionController(this.client) {
     WidgetsBinding.instance.addObserver(this);
 
-    _subscription = client?.auth.onAuthStateChange.listen(
-      (_) => unawaited(refresh()),
-    );
+    _subscription = client?.auth.onAuthStateChange.listen((state) {
+      if (state.event == AuthChangeEvent.signedOut) {
+        unawaited(AvatarCache.instance.clear());
+      }
+      unawaited(refresh());
+    });
     unawaited(refresh());
   }
   final SupabaseClient? client;
@@ -240,6 +244,7 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
     if (validateName(name) != null || validatePhone(phone) != null) {
       throw ArgumentError('Check your name and phone.');
     }
+    final previousAvatar = profile?.avatarUrl;
     await client!.rpc(
       portrait == null ? 'complete_profile' : 'save_profile_portrait',
       params: {
@@ -250,6 +255,11 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
       },
     );
     await refresh();
+    if (previousAvatar != null &&
+        previousAvatar != profile?.avatarUrl &&
+        previousAvatar.startsWith('photo:')) {
+      unawaited(AvatarCache.instance.remove(previousAvatar));
+    }
     if (!completed) {
       throw StateError(error ?? 'Profile could not be saved. Please retry.');
     }
@@ -272,8 +282,7 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> signOut() async {
     if (!preview) {
       await client?.auth.signOut();
-      if (!kIsWeb &&
-          defaultTargetPlatform == TargetPlatform.android) {
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
         try {
           await _initializeNativeGoogle();
           await GoogleSignIn.instance.signOut();
@@ -283,6 +292,7 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
       }
     }
     preview = false;
+    await AvatarCache.instance.clear();
     profile = null;
     role = AdminRole.student;
     error = null;

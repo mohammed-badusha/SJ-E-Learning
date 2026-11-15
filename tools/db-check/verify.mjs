@@ -144,6 +144,19 @@ await test('Google picture references reach matches and leaderboards',async()=>{
  assert.equal(board.find(p=>p.id===ids[0]).avatar_url,google);
  await q("update public.profiles set avatar_url='preset:curie' where id=$1",[ids[0]]);
 });
+await test('Leaderboard returns identities and versions in one ranked response',async()=>{
+ const before=(await q('select avatar_revision from public.profiles where id=$1',[ids[0]]))[0].avatar_revision;
+ await q("update public.profiles set avatar_url='preset:curie' where id=$1",[ids[0]]);
+ assert.equal((await q('select avatar_revision from public.profiles where id=$1',[ids[0]]))[0].avatar_revision,before);
+ await q("update public.profiles set avatar_url='preset:einstein' where id=$1",[ids[0]]);
+ const board=(await asUser(0,()=>q("select public.get_leaderboard('all_time') data")))[0].data.rows;
+ const mine=board.find(row=>row.id===ids[0]);
+ assert.equal(mine.avatar_url,'preset:einstein');
+ assert.equal(mine.avatar_revision,before+1);
+ assert.equal(mine.full_name,'Student 0');
+ assert.ok(board.every(row=>Number.isInteger(row.rank)&&typeof row.full_name==='string'&&'avatar_url' in row));
+ await q("update public.profiles set avatar_url='preset:curie' where id=$1",[ids[0]]);
+});
 await test('Bad portraits roll back profile changes and originals are not retained after deletion',async()=>{
  await asUser(0,()=>rejects(()=>q("select public.save_profile_portrait('Changed Name','+919876543210','gallery','invalid!')"),/invalid|INVALID/i));
  assert.equal((await q('select full_name from public.profiles where id=$1',[ids[0]]))[0].full_name,'Student 0');

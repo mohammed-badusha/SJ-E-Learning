@@ -2,33 +2,70 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 final standingsCacheProvider = Provider((_) => StandingsCache());
 
+class _BoardEntry {
+  _BoardEntry(this.period, this.data, this.fetchedAt);
+  final String period;
+  final Map<String, dynamic> data;
+  DateTime fetchedAt;
+}
+
+/// Small in-memory stale-while-revalidate cache. Rankings are never persisted
+/// on the device; only the bounded avatar thumbnails use disk storage.
 class StandingsCache {
-  final _memory = <String, Map<String, dynamic>>{};
+  static const freshness = Duration(seconds: 20);
+  final _memory = <String, _BoardEntry>{};
+  final _active = <String, Future<Map<String, dynamic>>>{};
   final _requests = <String, int>{};
-  String period(String type, DateTime utc) {
+
+  String period(String type, DateTime now) {
     if (type == 'all_time') return type;
-    var day = utc.toUtc().add(const Duration(hours: 5, minutes: 30));
+    var day = now.toUtc().add(const Duration(hours: 5, minutes: 30));
     if (type == 'weekly') day = day.subtract(Duration(days: day.weekday - 1));
     return day.toIso8601String().substring(0, 10);
   }
 
-  int begin(String key) =>
-      _requests.update(key, (n) => n + 1, ifAbsent: () => 1);
   Map<String, dynamic>? read(String key, String period) {
-    var item = _memory[key];
-
-    if (item == null || item['period'] != period) return null;
-    return item['data'] as Map<String, dynamic>?;
+    final item = _memory[key];
+    return item?.period == period ? item!.data : null;
   }
 
-  Future<void> write(
+  void invalidate(String key) {
+    final item = _memory[key];
+    if (item != null) item.fetchedAt = DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  Future<Map<String, dynamic>> load(
     String key,
     String period,
-    int request,
-    Map<String, dynamic> data,
-  ) async {
-    if (request != _requests[key]) return;
-    final item = {'period': period, 'data': data};
-    _memory[key] = item;
+    Future<Map<String, dynamic>> Function() fetch, {
+    bool force = false,
+  }) {
+    final activeKey = '$key:$period';
+    final pending = _active[activeKey];
+    if (pending != null) return pending;
+    final item = _memory[key];
+    if (!force &&
+        item?.period == period &&
+        DateTime.now().difference(item!.fetchedAt) < freshness) {
+      return Future.value(item.data);
+    }
+    final request = _requests.update(key, (n) => n + 1, ifAbsent: () => 1);
+    final result = fetch().then((data) {
+      if (_requests[key] == request) {
+        _memory[key] = _BoardEntry(period, data, DateTime.now());
+        if (_memory.length > 12) _memory.remove(_memory.keys.first);
+      }
+      return data;
+    });
+    _active[activeKey] = result;
+    result.then(
+      (_) {
+        _active.remove(activeKey);
+      },
+      onError: (Object _) {
+        _active.remove(activeKey);
+      },
+    );
+    return result;
   }
 }

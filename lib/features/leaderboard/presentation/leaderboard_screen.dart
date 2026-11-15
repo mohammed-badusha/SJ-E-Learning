@@ -1,6 +1,6 @@
-import 'dart:convert';
-import 'dart:typed_data';
+import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../../shared/arena_motion.dart';
 import '../../../shared/arena_panel.dart';
 import '../data/standings_cache.dart';
@@ -12,6 +12,7 @@ import '../../../core/theme.dart';
 import '../../../shared/widgets.dart';
 import '../../../shared/campus_widgets.dart';
 import '../../../shared/player_avatar.dart';
+import '../../../shared/avatar_cache.dart';
 import '../../auth/data/session.dart';
 import '../../practice/data/quiz_repository.dart';
 import '../../profile/domain/rank_tier.dart';
@@ -26,7 +27,6 @@ class LeaderboardScreen extends ConsumerStatefulWidget {
 class _LeaderboardState extends ConsumerState<LeaderboardScreen> {
   String type = 'weekly', arenaPeriod = 'weekly';
   late Future<Map<String, dynamic>> future;
-  late Future<Map<String, dynamic>> podiumPortraits;
   Map<String, dynamic>? cached;
   late final VoidCallback stopListening;
   @override
@@ -39,7 +39,13 @@ class _LeaderboardState extends ConsumerState<LeaderboardScreen> {
   }
 
   void onDataChanged() {
-    if (mounted) setState(load);
+    if (!mounted) return;
+    final session = ref.read(sessionProvider);
+    final cache = ref.read(standingsCacheProvider);
+    for (final board in ['weekly', 'all_time', 'daily']) {
+      cache.invalidate('standings:${session.profile?.id}:$board');
+    }
+    setState(() => load(force: true));
   }
 
   @override
@@ -48,47 +54,92 @@ class _LeaderboardState extends ConsumerState<LeaderboardScreen> {
     super.dispose();
   }
 
-  void load() {
+  void load({bool force = false}) {
     final session = ref.read(sessionProvider);
-    podiumPortraits =
-        type == 'weekly' && !session.preview && widget.dataLoader == null
-        ? QuizRepository(session).rpc('get_weekly_podium_portraits')
-        : Future.value(const {'rows': []});
     final cache = ref.read(standingsCacheProvider);
     final key = 'standings:${session.profile!.id}:$type';
     final period = cache.period(type, DateTime.now());
     cached = cache.read(key, period);
-    final request = cache.begin(key);
-    final fetched =
-        widget.dataLoader?.call(type) ??
-        (session.preview
-            ? Future.value({
-                'rows': [
-                  for (final entry in [
-                    ('one', 'Ananya Nair', 1840, 320),
-                    ('two', 'Arjun Menon', 1760, 290),
-                    ('three', 'Meera Iyer', 1680, 275),
-                    ('preview', 'Alex Learner', 1240, 250),
-                    ('five', 'Devika Das', 1190, 220),
-                    ('six', 'Rahul Sharma', 1150, 190),
-                  ].indexed)
-                    {
-                      'id': entry.$2.$1,
-                      'full_name': entry.$2.$2,
-                      'avatar_url': 'preset:explorer',
-                      'rating': entry.$2.$3,
-                      'trophies': entry.$2.$3,
-                      'metric': type == 'all_time' ? entry.$2.$3 : entry.$2.$4,
-                      'rank': entry.$1 + 1,
-                      'level': 3,
-                    },
-                ],
-              })
-            : QuizRepository(session).rpc('get_leaderboard', {'type': type}));
-    future = fetched.then((data) async {
-      await cache.write(key, period, request, data);
-      return data;
-    });
+    final requestedType = type;
+    future = cache.load(
+      key,
+      period,
+      () =>
+          widget.dataLoader?.call(requestedType) ??
+          (session.preview
+              ? Future.value({
+                  'rows': [
+                    for (final entry in [
+                      ('one', 'Ananya Nair', 1840, 320),
+                      ('two', 'Arjun Menon', 1760, 290),
+                      ('three', 'Meera Iyer', 1680, 275),
+                      ('preview', 'Alex Learner', 1240, 250),
+                      ('five', 'Devika Das', 1190, 220),
+                      ('six', 'Rahul Sharma', 1150, 190),
+                    ].indexed)
+                      {
+                        'id': entry.$2.$1,
+                        'full_name': entry.$2.$2,
+                        'avatar_url': 'preset:explorer',
+                        'rating': entry.$2.$3,
+                        'trophies': entry.$2.$3,
+                        'metric': requestedType == 'all_time'
+                            ? entry.$2.$3
+                            : entry.$2.$4,
+                        'rank': entry.$1 + 1,
+                        'level': 3,
+                      },
+                  ],
+                })
+              : QuizRepository(
+                  session,
+                ).rpc('get_leaderboard', {'type': requestedType})),
+      force: force || widget.dataLoader != null,
+    );
+    future.then((data) {
+      if (!mounted || type != requestedType) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && type == requestedType) _preloadVisible(data);
+      });
+    }, onError: (Object _) {});
+  }
+
+  void _preloadVisible(Map<String, dynamic> data) {
+    final session = ref.read(sessionProvider);
+    final rows = (data['rows'] as List? ?? const [])
+        .whereType<Map>()
+        .map((row) => Map<String, dynamic>.from(row))
+        .toList();
+    final visible = [
+      ...rows.take(6),
+      ...rows.where((row) => row['id'] == session.profile?.id),
+    ];
+    final seen = <String>{};
+    for (final row in visible) {
+      final reference = row['avatar_url'];
+      if (reference is! String || !seen.add(reference)) continue;
+      if (reference.startsWith('photo:')) {
+        unawaited(
+          AvatarCache.instance
+              .gallery(reference, session.client)
+              .then((_) {}, onError: (Object _) {}),
+        );
+      } else if (reference.startsWith('https://') &&
+          Uri.tryParse(reference)?.host.endsWith('.googleusercontent.com') ==
+              true) {
+        final revision = (row['avatar_revision'] as num?)?.toInt() ?? 0;
+        unawaited(
+          precacheImage(
+            CachedNetworkImageProvider(
+              reference,
+              cacheKey: AvatarCache.instance.networkKey(reference, revision),
+              cacheManager: AvatarCache.instance.disk,
+            ),
+            context,
+          ).catchError((Object _) {}),
+        );
+      }
+    }
   }
 
   void select(String value) => setState(() {
@@ -97,7 +148,7 @@ class _LeaderboardState extends ConsumerState<LeaderboardScreen> {
     load();
   });
   Future<void> refresh() async {
-    setState(load);
+    setState(() => load(force: true));
     try {
       await future;
     } catch (_) {}
@@ -135,195 +186,213 @@ class _LeaderboardState extends ConsumerState<LeaderboardScreen> {
               final mine = rows
                   .where((r) => r['id'] == session.profile!.id)
                   .firstOrNull;
-              return ListView(
+              return CustomScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(20, 22, 20, 28),
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(5),
-                    decoration: BoxDecoration(
-                      color: context.tokens.raised,
-                      borderRadius: BorderRadius.circular(18),
+                slivers: [
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(
+                      20,
+                      22,
+                      20,
+                      rows.isEmpty ? 28 : 0,
                     ),
-                    child: IntrinsicHeight(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Expanded(
-                            child: _BoardTab(
-                              label: 'Battle arena',
-                              icon: Icons.sports_esports_outlined,
-                              selected: type != 'daily',
-                              onTap: () => select(arenaPeriod),
-                            ),
-                          ),
-                          Expanded(
-                            child: _BoardTab(
-                              label: 'Daily quiz',
-                              icon: Icons.public_rounded,
-                              selected: type == 'daily',
-                              onTap: () => select('daily'),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  if (type != 'daily')
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
+                    sliver: SliverList.list(
                       children: [
-                        ChoiceChip(
-                          label: const Text('This week'),
-                          selected: type == 'weekly',
-                          onSelected: (_) => select('weekly'),
-                        ),
-                        ChoiceChip(
-                          label: const Text('All-time trophies'),
-                          selected: type == 'all_time',
-                          onSelected: (_) => select('all_time'),
-                        ),
-                      ],
-                    ),
-                  const SizedBox(height: 12),
-                  Text(
-                    type == 'daily'
-                        ? 'Today’s shared challenge · resets at midnight IST'
-                        : type == 'weekly'
-                        ? 'Battle points earned this week · resets Monday IST'
-                        : 'Your total battle trophies, across every season',
-                    style: context.type.bodySmall,
-                  ),
-                  if (session.preview)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 10),
-                      child: Text(
-                        'Sample rankings · local preview',
-                        style: context.type.bodySmall,
-                      ),
-                    ),
-                  const SizedBox(height: 24),
-                  if (waiting && board == null)
-                    const ArenaSkeleton(
-                      layout: SkeletonLayout.standings,
-                      label: 'Updating the standings…',
-                    )
-                  else if (snapshot.hasError && board == null)
-                    EmptyState(
-                      title: 'Rankings couldn’t load',
-                      message:
-                          'Reconnect and try again. Your progress is saved.',
-                      action: OutlinedButton(
-                        onPressed: refresh,
-                        child: const Text('Retry'),
-                      ),
-                    )
-                  else ...[
-                    if (waiting)
-                      Text(
-                        'Refreshing standings…',
-                        style: context.type.bodySmall,
-                      ),
-                    if (snapshot.hasError)
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Showing saved standings'),
-                        trailing: TextButton(
-                          onPressed: refresh,
-                          child: const Text('Retry'),
-                        ),
-                      ),
-                    Text(
-                      'Your standing',
-                      style: context.type.titleSmall?.copyWith(
-                        color: context.tokens.secondary,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    _Standing(
-                      entry: mine,
-                      name: session.profile!.fullName,
-                      avatarUrl:
-                          mine?['avatar_url'] as String? ??
-                          session.profile!.avatarUrl,
-                      unit: unit,
-                    ),
-                    if (rows.isEmpty) ...[
-                      const SizedBox(height: 24),
-                      EmptyState(
-                        title: 'The podium is waiting',
-                        message: type == 'daily'
-                            ? 'Complete today’s challenge to join the standings.'
-                            : 'Play a battle to start climbing the rankings.',
-                        icon: Icons.emoji_events_outlined,
-                        action: OutlinedButton(
-                          onPressed: () => context.push(
-                            type == 'daily' ? '/daily' : '/matchmaking',
+                        Container(
+                          padding: const EdgeInsets.all(5),
+                          decoration: BoxDecoration(
+                            color: context.tokens.raised,
+                            borderRadius: BorderRadius.circular(18),
                           ),
-                          child: Text(
-                            type == 'daily'
-                                ? 'Take the challenge'
-                                : 'Play a battle',
-                          ),
-                        ),
-                      ),
-                    ] else ...[
-                      const SizedBox(height: 28),
-                      Arrive(
-                        key: ValueKey(type),
-                        from: const Offset(0, 16),
-                        child: ArenaCard(
-                          padding: const EdgeInsets.fromLTRB(12, 16, 12, 0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Text(
-                                type == 'daily'
-                                    ? 'Daily podium'
-                                    : type == 'weekly'
-                                    ? 'Weekly podium'
-                                    : 'All-time podium',
-                                style: context.type.titleMedium,
-                              ),
-                              const SizedBox(height: 12),
-                              FutureBuilder<Map<String, dynamic>>(
-                                future: podiumPortraits,
-                                builder: (context, portraits) => _Podium(
-                                  entries: rows.take(3).toList(),
-                                  unit: unit,
-                                  portraits: {
-                                    for (final row
-                                        in (portraits.data?['rows'] as List? ??
-                                            const []))
-                                      if (row is Map && row['id'] is String)
-                                        row['id'] as String:
-                                            Map<String, dynamic>.from(row),
-                                  },
+                          child: IntrinsicHeight(
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Expanded(
+                                  child: _BoardTab(
+                                    label: 'Battle arena',
+                                    icon: Icons.sports_esports_outlined,
+                                    selected: type != 'daily',
+                                    onTap: () => select(arenaPeriod),
+                                  ),
                                 ),
+                                Expanded(
+                                  child: _BoardTab(
+                                    label: 'Daily quiz',
+                                    icon: Icons.public_rounded,
+                                    selected: type == 'daily',
+                                    onTap: () => select('daily'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        if (type != 'daily')
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              ChoiceChip(
+                                label: const Text('This week'),
+                                selected: type == 'weekly',
+                                onSelected: (_) => select('weekly'),
+                              ),
+                              ChoiceChip(
+                                label: const Text('All-time trophies'),
+                                selected: type == 'all_time',
+                                onSelected: (_) => select('all_time'),
                               ),
                             ],
                           ),
+                        const SizedBox(height: 12),
+                        Text(
+                          type == 'daily'
+                              ? 'Today’s shared challenge · resets at midnight IST'
+                              : type == 'weekly'
+                              ? 'Battle points earned this week · resets Monday IST'
+                              : 'Your total battle trophies, across every season',
+                          style: context.type.bodySmall,
                         ),
-                      ),
-                      const SizedBox(height: 28),
-                      SectionHeading(
-                        title: 'Top rankings',
-                        action: '${rows.length} learners',
-                      ),
-                      const SizedBox(height: 12),
-                      for (final entry in rows)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: _RankingRow(
-                            entry: entry,
-                            you: entry['id'] == session.profile!.id,
+                        if (session.preview)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 10),
+                            child: Text(
+                              'Sample rankings · local preview',
+                              style: context.type.bodySmall,
+                            ),
+                          ),
+                        const SizedBox(height: 24),
+                        if (waiting && board == null)
+                          const ArenaSkeleton(
+                            layout: SkeletonLayout.standings,
+                            label: 'Updating the standings…',
+                          )
+                        else if (snapshot.hasError && board == null)
+                          EmptyState(
+                            title: 'Rankings couldn’t load',
+                            message:
+                                'Reconnect and try again. Your progress is saved.',
+                            action: OutlinedButton(
+                              onPressed: refresh,
+                              child: const Text('Retry'),
+                            ),
+                          )
+                        else ...[
+                          if (waiting)
+                            Text(
+                              'Refreshing standings…',
+                              style: context.type.bodySmall,
+                            ),
+                          if (snapshot.hasError)
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('Showing saved standings'),
+                              trailing: TextButton(
+                                onPressed: refresh,
+                                child: const Text('Retry'),
+                              ),
+                            ),
+                          Text(
+                            'Your standing',
+                            style: context.type.titleSmall?.copyWith(
+                              color: context.tokens.secondary,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _Standing(
+                            entry: mine,
+                            name: session.profile!.fullName,
+                            avatarUrl:
+                                mine?['avatar_url'] as String? ??
+                                session.profile!.avatarUrl,
+                            avatarRevision:
+                                (mine?['avatar_revision'] as num?)?.toInt() ??
+                                0,
                             unit: unit,
                           ),
-                        ),
-                    ],
-                  ],
+                          if (rows.isEmpty) ...[
+                            const SizedBox(height: 24),
+                            EmptyState(
+                              title: 'The podium is waiting',
+                              message: type == 'daily'
+                                  ? 'Complete today’s challenge to join the standings.'
+                                  : 'Play a battle to start climbing the rankings.',
+                              icon: Icons.emoji_events_outlined,
+                              action: OutlinedButton(
+                                onPressed: () => context.push(
+                                  type == 'daily' ? '/daily' : '/matchmaking',
+                                ),
+                                child: Text(
+                                  type == 'daily'
+                                      ? 'Take the challenge'
+                                      : 'Play a battle',
+                                ),
+                              ),
+                            ),
+                          ] else ...[
+                            const SizedBox(height: 28),
+                            Arrive(
+                              key: ValueKey(type),
+                              from: const Offset(0, 16),
+                              child: ArenaCard(
+                                padding: const EdgeInsets.fromLTRB(
+                                  12,
+                                  16,
+                                  12,
+                                  0,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    Text(
+                                      type == 'daily'
+                                          ? 'Daily podium'
+                                          : type == 'weekly'
+                                          ? 'Weekly podium'
+                                          : 'All-time podium',
+                                      style: context.type.titleMedium,
+                                    ),
+                                    const SizedBox(height: 12),
+                                    _Podium(
+                                      entries: rows.take(3).toList(),
+                                      unit: unit,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 28),
+                            SectionHeading(
+                              title: 'Top rankings',
+                              action: '${rows.length} learners',
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (rows.isNotEmpty)
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+                      sliver: SliverList.builder(
+                        itemCount: rows.length,
+                        itemBuilder: (context, index) {
+                          final entry = rows[index];
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _RankingRow(
+                              entry: entry,
+                              you: entry['id'] == session.profile!.id,
+                              unit: unit,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
                 ],
               );
             },
@@ -389,11 +458,13 @@ class _Standing extends StatelessWidget {
     required this.entry,
     required this.name,
     required this.avatarUrl,
+    required this.avatarRevision,
     required this.unit,
   });
   final Map<String, dynamic>? entry;
   final String name, unit;
   final String? avatarUrl;
+  final int avatarRevision;
   @override
   Widget build(BuildContext context) => ArenaPanel(
     padding: const EdgeInsets.all(18),
@@ -411,7 +482,12 @@ class _Standing extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 10),
-        PlayerAvatar(name: name, reference: avatarUrl, size: 38),
+        PlayerAvatar(
+          name: name,
+          reference: avatarUrl,
+          avatarRevision: avatarRevision,
+          size: 38,
+        ),
         const SizedBox(width: 10),
         Expanded(
           child: Column(
@@ -481,14 +557,9 @@ class _Standing extends StatelessWidget {
 }
 
 class _Podium extends StatelessWidget {
-  const _Podium({
-    required this.entries,
-    required this.unit,
-    required this.portraits,
-  });
+  const _Podium({required this.entries, required this.unit});
   final List<Map<String, dynamic>> entries;
   final String unit;
-  final Map<String, Map<String, dynamic>> portraits;
   @override
   Widget build(BuildContext context) {
     final order = entries.length >= 2 ? [1, 0, if (entries.length > 2) 2] : [0];
@@ -509,16 +580,6 @@ class _Podium extends StatelessWidget {
                   const SizedBox(height: 8),
                   Builder(
                     builder: (context) {
-                      final portrait = portraits[entries[index]['id']];
-                      final encoded = portrait?['photo_png'];
-                      Uint8List? photo;
-                      if (encoded is String) {
-                        try {
-                          photo = base64Decode(encoded);
-                        } catch (_) {
-                          /* initials fallback */
-                        }
-                      }
                       final size = entries[index]['rank'] == 1 ? 56.0 : 46.0;
                       final color = entries[index]['rank'] == 1
                           ? ArenaTokens.gold
@@ -533,11 +594,11 @@ class _Podium extends StatelessWidget {
                         ),
                         child: PlayerAvatar(
                           name: entries[index]['full_name'] as String,
-                          reference:
-                              (portrait?['avatar_url'] ??
-                                      entries[index]['avatar_url'])
-                                  as String?,
-                          draft: photo,
+                          reference: entries[index]['avatar_url'] as String?,
+                          avatarRevision:
+                              (entries[index]['avatar_revision'] as num?)
+                                  ?.toInt() ??
+                              0,
                           size: size,
                         ),
                       );
@@ -646,6 +707,7 @@ class _RankingRow extends StatelessWidget {
           PlayerAvatar(
             name: entry['full_name'] as String,
             reference: entry['avatar_url'] as String?,
+            avatarRevision: (entry['avatar_revision'] as num?)?.toInt() ?? 0,
             size: 36,
           ),
           const SizedBox(width: 8),
