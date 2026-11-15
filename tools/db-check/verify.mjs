@@ -416,11 +416,117 @@ await test('New bots join the unused tail and disabled bots leave it',async()=>{
  assert.ok(reenabled.bot_ids.slice(0,reenabled.next_index).includes(selected));
  assert.ok(!reenabled.bot_ids.slice(reenabled.next_index).includes(selected));
 });
+await test('Each learner draws every subject question once before that cycle reshuffles',async()=>{
+ const subject=(await q("select id from public.categories where slug='reasoning'"))[0].id;
+ const bot=(await q('select id from public.profiles where is_bot limit 1'))[0].id;
+ await q('delete from public.player_question_cycles where user_id in ($1,$2)',[ids[0],ids[3]]);
+ const available=(await q("select id from public.questions where category_id=$1 and status='published'",[subject])).map(row=>row.id);
+ const seen=new Set();
+ for(let i=0;i<available.length;i++) {
+  const selected=(await q('select sj_private.shared_match_question($1,$2,$3,$4) id',[ids[0],bot,subject,'bot']))[0].id;
+  assert.ok(!seen.has(selected),`question repeated before subject cycle ended: ${selected}`);
+  seen.add(selected);
+ }
+ assert.deepEqual(seen,new Set(available));
+ assert.equal((await q('select next_index from public.player_question_cycles where user_id=$1 and category_id=$2',[ids[0],subject]))[0].next_index,available.length);
+ assert.equal((await q('select count(*)::int n from public.player_question_cycles where user_id=$1',[ids[3]]))[0].n,0);
+ assert.ok(available.includes((await q('select sj_private.shared_match_question($1,$2,$3,$4) id',[ids[0],bot,subject,'bot']))[0].id));
+ await asUser(0,()=>rejects(()=>q('select * from public.player_question_cycles'),/permission denied/));
+});
+await test('New questions enter the unused tail and disabled questions leave it',async()=>{
+ const subject=(await q("select id from public.categories where slug='english'"))[0].id;
+ const topic=(await q('select id from public.subtopics where category_id=$1 limit 1',[subject]))[0].id;
+ const before=(await q('select (sj_private.prepare_question_cycle($1,$2)).*',[ids[0],subject]))[0];
+ const disabled=before.question_ids[before.next_index];
+ const added=(await q("insert into public.questions(category_id,subtopic_id,question_text,difficulty,time_limit_seconds,explanation,status) values($1,$2,'New shuffle bag question?', 'medium',15,'Test','draft') returning id",[subject,topic]))[0].id;
+ await q("insert into public.question_options(question_id,option_text,is_correct,sort_order) values($1,'A',true,0),($1,'B',false,1),($1,'C',false,2),($1,'D',false,3)",[added]);
+ await q("update public.questions set status='published' where id=$1",[added]);
+ await q("update public.questions set status='archived' where id=$1",[disabled]);
+ const after=(await q('select (sj_private.prepare_question_cycle($1,$2)).*',[ids[0],subject]))[0];
+ assert.ok(after.question_ids.slice(after.next_index).includes(added));
+ assert.ok(!after.question_ids.slice(after.next_index).includes(disabled));
+ assert.equal(new Set(after.question_ids).size,after.question_ids.length);
+ await q("update public.questions set status='published' where id=$1",[disabled]);
+ await q('delete from public.questions where id=$1',[added]);
+ const restored=(await q('select (sj_private.prepare_question_cycle($1,$2)).*',[ids[0],subject]))[0];
+ assert.ok(restored.question_ids.slice(restored.next_index).includes(disabled));
+ assert.ok(!restored.question_ids.slice(restored.next_index).includes(added));
+});
+await test('Human matches prefer a question unused by both, then by either player',async()=>{
+ const subject=(await q("select id from public.categories where slug='quant'"))[0].id;
+ const pool=(await q("select id from public.questions where category_id=$1 and status='published' order by id",[subject])).map(row=>row.id);
+ const [a,b,c]=pool;
+ for(const uid of [ids[0],ids[3]]) await q('select sj_private.prepare_question_cycle($1,$2)',[uid,subject]);
+ const revision=(await q('select revision from sj_private.question_pool_versions where category_id=$1',[subject]))[0].revision;
+ await q('update public.player_question_cycles set question_ids=$3,next_index=$4,catalog_revision=$5 where user_id=$1 and category_id=$2',
+  [ids[0],subject,[...pool.filter(id=>id!==a&&id!==b),a,b],pool.length-2,revision]);
+ await q('update public.player_question_cycles set question_ids=$3,next_index=$4,catalog_revision=$5 where user_id=$1 and category_id=$2',
+  [ids[3],subject,[...pool.filter(id=>id!==b&&id!==c),b,c],pool.length-2,revision]);
+ const common=(await q("select sj_private.shared_match_question($1,$2,$3,'live') id",[ids[0],ids[3],subject]))[0].id;
+ assert.equal(common,b);
+ const fallback=(await q("select sj_private.shared_match_question($1,$2,$3,'live') id",[ids[0],ids[3],subject]))[0].id;
+ assert.ok([a,c].includes(fallback));
+ const states=await q('select user_id,next_index from public.player_question_cycles where user_id in ($1,$2) and category_id=$3',[ids[0],ids[3],subject]);
+ assert.equal(states.find(row=>row.user_id===ids[0]).next_index,pool.length-1+(fallback===a?1:0));
+ assert.equal(states.find(row=>row.user_id===ids[3]).next_index,pool.length-1+(fallback===c?1:0));
+});
+await test('Automatic daily sets rotate globally and stay unique across a cycle boundary',async()=>{
+ await q("update sj_private.daily_question_cycle set question_ids='{}',next_index=0,catalog_revision=-1 where singleton");
+ const first=(await q("select sj_private.generate_daily('2027-01-01') id"))[0].id;
+ const second=(await q("select sj_private.generate_daily('2027-01-02') id"))[0].id;
+ const firstIds=(await q('select question_id from public.daily_challenge_questions where challenge_id=$1 order by question_index',[first])).map(row=>row.question_id);
+ const secondIds=(await q('select question_id from public.daily_challenge_questions where challenge_id=$1 order by question_index',[second])).map(row=>row.question_id);
+ assert.equal(new Set(firstIds).size,10);
+ assert.equal(new Set(secondIds).size,10);
+ assert.equal(firstIds.filter(id=>secondIds.includes(id)).length,0);
+ const cycle=(await q('select question_ids,next_index from sj_private.daily_question_cycle where singleton'))[0];
+ const remaining=cycle.question_ids.slice(-3);
+ await q('update sj_private.daily_question_cycle set next_index=$1 where singleton',[cycle.question_ids.length-3]);
+ const third=(await q("select sj_private.generate_daily('2027-01-03') id"))[0].id;
+ const thirdIds=(await q('select question_id from public.daily_challenge_questions where challenge_id=$1',[third])).map(row=>row.question_id);
+ assert.equal(new Set(thirdIds).size,10);
+ for(const id of remaining) assert.ok(thirdIds.includes(id));
+});
+await test('Disabled daily questions leave the global unused tail until re-enabled',async()=>{
+ const before=(await q('select question_ids,next_index from sj_private.daily_question_cycle where singleton'))[0];
+ const upcoming=before.question_ids[before.next_index];
+ await q("update public.questions set status='archived' where id=$1",[upcoming]);
+ const disabled=(await q('select (sj_private.prepare_daily_question_cycle()).*'))[0];
+ assert.ok(!disabled.question_ids.slice(disabled.next_index).includes(upcoming));
+ await q("update public.questions set status='published' where id=$1",[upcoming]);
+ const restored=(await q('select (sj_private.prepare_daily_question_cycle()).*'))[0];
+ assert.ok(restored.question_ids.slice(restored.next_index).includes(upcoming));
+});
+await test('A manually scheduled daily set keeps staff order without advancing the automatic bag',async()=>{
+ const day=(await q("select ((now() at time zone 'Asia/Kolkata')::date+7)::text as \"day\""))[0].day;
+ const chosen=(await q("select id from public.questions where status='published' order by id limit 10")).map(row=>row.id);
+ const before=(await q('select question_ids,next_index from sj_private.daily_question_cycle where singleton'))[0];
+ const cid=(await asUser(2,()=>q("select public.admin_schedule_daily($1,'Manual shuffle test',$2) id",[day,chosen])))[0].id;
+ const assigned=(await q('select question_id from public.daily_challenge_questions where challenge_id=$1 order by question_index',[cid])).map(row=>row.question_id);
+ const after=(await q('select question_ids,next_index from sj_private.daily_question_cycle where singleton'))[0];
+ assert.deepEqual(assigned,chosen);
+ assert.deepEqual(after,before);
+});
+await test('Starting the shared daily set marks its questions once for that learner',async()=>{
+ await asUser(3,()=>q("select public.complete_profile('Daily Shuffle Learner','+919876543213')"));
+ await q('delete from public.player_question_cycles where user_id=$1',[ids[3]]);
+ const today=(await asUser(3,()=>q('select public.get_today_challenge() data')))[0].data;
+ const prior=(await q('select q.question_id,p.category_id from public.daily_challenge_questions q join public.questions p on p.id=q.question_id where q.challenge_id=$1 order by q.question_index limit 1',[today.id]))[0];
+ await q('select sj_private.mark_question_seen($1,$2,$3)',[ids[3],prior.category_id,prior.question_id]);
+ const started=(await asUser(3,()=>q('select public.start_daily_attempt() data')))[0].data;
+ assert.equal(started.question_count,10);
+ const counted=(await q('select coalesce(sum(next_index),0)::int n from public.player_question_cycles where user_id=$1',[ids[3]]))[0].n;
+ assert.equal(counted,10);
+ await asUser(3,()=>q('select public.start_daily_attempt()'));
+ assert.equal((await q('select coalesce(sum(next_index),0)::int n from public.player_question_cycles where user_id=$1',[ids[3]]))[0].n,10);
+ assert.equal((await q('select count(*)::int n from public.daily_attempts where user_id=$1 and challenge_id=$2',[ids[3],today.id]))[0].n,1);
+});
 await test('Account deletion is service-only and removes personal data without breaking history',async()=>{
  await asUser(0,()=>rejects(()=>q('select public.anonymize_account($1)',[ids[1]]),/permission denied/));
  await q('select sj_private.next_bot_for_player($1)',[ids[1]]);
  await q('select public.anonymize_account($1)',[ids[1]]);
  assert.equal((await q('select count(*)::int n from public.player_bot_cycles where user_id=$1',[ids[1]]))[0].n,0);
+ assert.equal((await q('select count(*)::int n from public.player_question_cycles where user_id=$1',[ids[1]]))[0].n,0);
  assert.equal((await q('select count(*)::int n from sj_private.player_photos where owner_id=$1',[ids[1]]))[0].n,0);
  await q('delete from auth.users where id=$1',[ids[1]]);
  const p=(await q('select full_name,email,phone,auth_user_id,profile_completed from public.profiles where id=$1',[ids[1]]))[0];
