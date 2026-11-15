@@ -204,7 +204,6 @@ class _ProfileState extends ConsumerState<ProfileScreen> {
                 final stats = snapshot.data!,
                     matches = (stats['matches'] as num).toInt(),
                     wins = (stats['wins'] as num).toInt();
-                final categories = stats['categories'] as List;
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -228,74 +227,6 @@ class _ProfileState extends ConsumerState<ProfileScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 26),
-                    const SectionHeading(title: 'Your subject strengths'),
-                    const SizedBox(height: 14),
-                    ArenaCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (categories.isEmpty)
-                            const Text(
-                              'Complete a round to start discovering your strengths.',
-                            ),
-                          for (final entry in categories)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 18),
-                              child: Column(
-                                children: [
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          entry['name'],
-                                          style: context.type.titleSmall,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Text(
-                                        '${entry['correct']}/${entry['played']}',
-                                        style: context.type.bodySmall,
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 10),
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(6),
-                                    child: LinearProgressIndicator(
-                                      value: (entry['played'] as num) == 0
-                                          ? 0
-                                          : (entry['correct'] as num) /
-                                                (entry['played'] as num),
-                                      color: ArenaTokens.teal,
-                                      minHeight: 7,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    if ((stats['badges'] as List).isNotEmpty) ...[
-                      const SizedBox(height: 24),
-                      const SectionHeading(title: 'Earned along the way'),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          for (final badge in stats['badges'])
-                            Chip(
-                              avatar: Icon(
-                                Icons.workspace_premium_rounded,
-                                color: context.tokens.warning,
-                              ),
-                              label: Text(badge['name']),
-                            ),
-                        ],
-                      ),
-                    ],
                   ],
                 );
               },
