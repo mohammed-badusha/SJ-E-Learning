@@ -39,7 +39,7 @@ class _DailyState extends ConsumerState<DailyScreen> {
     future = session.preview
         ? Future.value({
             'title': 'Daily challenge',
-            'question_count': 5,
+            'question_count': 4,
             'completed': false,
             'started': false,
           })

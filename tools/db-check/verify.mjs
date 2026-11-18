@@ -208,6 +208,44 @@ await test('Bot wins award fifteen and losses demote across the Silver boundary'
   assert.equal((await q('select trophies from public.profiles where id=$1',[ids[0]]))[0].trophies,1010);
  } finally { await q('rollback'); }
 });
+await test('Long-round bot timing follows each style and only missed rounds can time out',async()=>{
+ for(const [style,lower,upper] of [
+  ['Speedster',28000,32000],['Balanced',30000,35000],
+  ['Analytical',33000,38000],['Wildcard',28000,39000]
+ ]) {
+  const samples=(await q('select sj_private.bot_response_ms($1,40,true) ms from generate_series(1,100)',[style])).map(row=>row.ms);
+  assert.ok(samples.every(ms=>ms>=lower&&ms<upper),`${style} response outside ${lower}–${upper}`);
+  assert.ok(new Set(samples).size>1,`${style} response time was fixed`);
+ }
+ const incorrect=(await q('select sj_private.bot_response_ms($1,40,false) ms from generate_series(1,400)',['Balanced'])).map(row=>row.ms);
+ assert.ok(incorrect.some(ms=>ms===40000),'some missed rounds should time out');
+ assert.ok(incorrect.some(ms=>ms<40000),'missed rounds should not always time out');
+ for(const [style,lower,upper] of [['Speedster',2000,6000],['Balanced',3000,8000],['Analytical',5000,11000],['Wildcard',2000,14000]]) {
+  const samples=(await q('select sj_private.bot_response_ms($1,15,true) ms from generate_series(1,50)',[style])).map(row=>row.ms);
+  assert.ok(samples.every(ms=>ms>=lower&&ms<upper),`${style} short-round timing changed`);
+ }
+});
+await test('A timed-out bot never submits after the round deadline',async()=>{
+ await q('begin');
+ try {
+  const bot=(await q("insert into public.profiles(full_name,is_bot,rating,level,avatar_url) values('Timing Test Bot',true,1000,8,'color:#5B4CFF') returning id"))[0].id;
+  const match=(await q("select sj_private.new_match($1,$2,null,null,'bot') id",[ids[0],bot]))[0].id;
+  await q("update public.matches set next_tick_at=now()-interval '1 second' where id=$1",[match]);
+  await q('select sj_private.tick_match($1)',[match]);
+  await q('update public.bot_plans set response_ms=40000,will_be_correct=false where match_id=$1 and question_index=0',[match]);
+  await q("update public.match_questions set started_at=now()-interval '41 seconds',deadline_at=now()-interval '1 second' where match_id=$1 and question_index=0",[match]);
+  await q('select sj_private.tick_match($1)',[match]);
+  assert.equal((await q('select count(*)::int n from public.match_answers where match_id=$1 and user_id=$2',[match,bot]))[0].n,0);
+  assert.equal((await q('select phase from public.matches where id=$1',[match]))[0].phase,'result');
+  const lateMatch=(await q("select sj_private.new_match($1,$2,null,null,'bot') id",[ids[0],bot]))[0].id;
+  await q("update public.matches set next_tick_at=now()-interval '1 second' where id=$1",[lateMatch]);
+  await q('select sj_private.tick_match($1)',[lateMatch]);
+  await q('update public.bot_plans set response_ms=38000 where match_id=$1 and question_index=0',[lateMatch]);
+  await q("update public.match_questions set started_at=now()-interval '41 seconds',deadline_at=now()-interval '1 second' where match_id=$1 and question_index=0",[lateMatch]);
+  await q('select sj_private.tick_match($1)',[lateMatch]);
+  assert.equal((await q('select count(*)::int n from public.match_answers where match_id=$1 and user_id=$2',[lateMatch,bot]))[0].n,0,'a late server tick must not backdate an answer');
+ } finally { await q('rollback'); }
+});
 await test('Bot cannot start early and uses one queue entry',async()=>{
  await asUser(0,()=>q('select public.join_matchmaking()'));
  await asUser(0,()=>rejects(()=>q('select public.start_bot_match()'),/SEARCH_NOT_EXPIRED/));
@@ -223,7 +261,7 @@ await test('Daily users share identical ordered question set; second start resum
  assert.equal(d1.question.id,d2.question.id);assert.deepEqual(d1.question.options,d2.question.options);
  const again=(await asUser(0,()=>q('select public.start_daily_attempt() data')))[0].data;
  assert.equal(d1.attempt_id,again.attempt_id);
- await asUser(0,()=>rejects(()=>q('select public.get_daily_question($1,9)',[d1.attempt_id]),/QUESTION_NOT_ACTIVE/));
+ await asUser(0,()=>rejects(()=>q('select public.get_daily_question($1,3)',[d1.attempt_id]),/QUESTION_NOT_ACTIVE/));
  await asUser(1,()=>rejects(()=>q('select public.submit_daily_answer($1,0,null)',[d1.attempt_id]),/ATTEMPT_NOT_FOUND/));
 });
 await test('Admin role changes, viewer restrictions and settings validation',async()=>{
@@ -289,14 +327,48 @@ await test('Category pages, learner directory and atomic JSON imports enforce ro
  assert.equal((await submit(many))[0].data.imported,55);
  assert.equal((await submit(many))[0].data.already_imported,true);
  const groups=(await asUser(2,()=>q('select public.admin_question_groups($1) data',['#'])))[0].data.categories;
- const first=(await asUser(2,()=>q('select public.admin_question_page($1,$2) data',[groups[0].id,'#'])))[0].data.rows;
- assert.equal(first.length,50);assert.equal(first[0].topic_name,'Percentage');assert.equal(first[0].options.find(o=>o.is_correct).option_text,'30');
- const more=(await asUser(2,()=>q('select public.admin_question_page($1,$2,$3) data',[groups[0].id,'#',first.at(-1).id])))[0].data.rows;
+ const first=(await asUser(2,()=>q('select public.admin_question_summary_page($1,$2) data',[groups[0].id,'#'])))[0].data.rows;
+ assert.equal(first.length,50);assert.equal(first[0].topic_name,'Percentage');assert.ok(!('options' in first[0]));
+ const detail=(await asUser(2,()=>q('select public.admin_question_detail($1) data',[first[0].id])))[0].data;
+ assert.equal(detail.options.find(o=>o.is_correct).option_text,'30');
+ const legacy=(await asUser(2,()=>q('select public.admin_question_page($1,$2) data',[groups[0].id,'#'])))[0].data.rows;
+ assert.equal(legacy[0].options.find(o=>o.is_correct).option_text,'30');
+ const more=(await asUser(2,()=>q('select public.admin_question_summary_page($1,$2,$3) data',[groups[0].id,'#',first.at(-1).id])))[0].data.rows;
  assert.equal(new Set([...first,...more].map(o=>o.id)).size,55);
  const users=(await asUser(2,()=>q('select public.admin_user_page() data')))[0].data.rows;assert.ok(users.some(u=>u.phone));assert.ok(!('fcm_token' in users[0]));
  for (const sql of ['select public.admin_user_page()','select public.admin_question_groups()', "select public.admin_import_questions('{}')"]){
    await asUser(0,()=>rejects(()=>q(sql),/ADMIN_REQUIRED/));
  }
+});
+await test('Only editors can archive questions, while match and daily snapshots survive',async()=>{
+ const matchQuestion=(await q('select question_id id from public.match_questions where question_id is not null limit 1'))[0].id;
+ const dailyQuestion=(await q('select question_id id from public.daily_challenge_questions where question_id is not null limit 1'))[0].id;
+ await asUser(0,()=>rejects(()=>q('select public.admin_archive_question($1)',[matchQuestion]),/ADMIN_REQUIRED/));
+ await asUser(1,()=>rejects(()=>q('select public.admin_archive_question($1)',[matchQuestion]),/ADMIN_REQUIRED/));
+ await asUser(0,()=>rejects(()=>q('select public.admin_question_detail($1)',[matchQuestion]),/ADMIN_REQUIRED/));
+ await q('begin');
+ try {
+  await asUser(2,()=>q("select public.admin_set_role('student0@example.com','editor',true)"));
+  assert.equal((await asUser(0,()=>q('select public.admin_archive_question($1) archived',[matchQuestion])))[0].archived,true);
+ } finally { await q('rollback'); }
+ await q('begin');
+ try {
+  for(const id of new Set([matchQuestion,dailyQuestion])) {
+   assert.equal((await asUser(2,()=>q('select public.admin_archive_question($1) archived',[id])))[0].archived,true);
+   assert.equal((await q('select status from public.questions where id=$1',[id]))[0].status,'archived');
+   assert.equal((await asUser(2,()=>q('select public.admin_archive_question($1) archived',[id])))[0].archived,false);
+  }
+  assert.equal((await q('select count(*)::int n from public.match_questions where question_id=$1 and snapshot is not null',[matchQuestion]))[0].n>0,true);
+  assert.equal((await q('select count(*)::int n from public.daily_challenge_questions where question_id=$1 and snapshot is not null',[dailyQuestion]))[0].n>0,true);
+  const category=(await q('select category_id id from public.questions where id=$1',[matchQuestion]))[0].id;
+  const page=(await asUser(2,()=>q('select public.admin_question_summary_page($1) data',[category])))[0].data.rows;
+  assert.ok(!page.some(row=>row.id===matchQuestion));
+  const all=(await asUser(2,()=>q('select public.admin_question_summary_page(null::uuid) data')))[0].data;
+  assert.ok(all.total>=all.rows.length);
+  await q('insert into public.player_question_cycles(user_id,category_id,question_ids,next_index,catalog_revision) values($1,$2,array[$3::uuid],0,-1) on conflict(user_id,category_id) do update set question_ids=excluded.question_ids,next_index=0,catalog_revision=-1',[ids[0],category,matchQuestion]);
+  const remaining=(await q('select (sj_private.prepare_question_cycle($1,$2)).question_ids ids',[ids[0],category]))[0].ids;
+  assert.ok(!remaining.includes(matchQuestion),'archived question must leave the unused shuffle bag');
+ } finally { await q('rollback'); }
 });
 await test('Import normalizes names, publishes immediately, and rejects unknown topics',async()=>{
  const quant=(await q("select id from public.categories where slug='quant'"))[0].id;
@@ -318,15 +390,52 @@ await test('Expired daily attempts auto-submit once and award a streak',async()=
  const p=(await q('select xp,current_streak from public.profiles where id=$1',[ids[0]]))[0];assert.equal(p.current_streak,1);
  await q('select sj_private.daily_maintenance()');assert.equal((await q('select xp from public.profiles where id=$1',[ids[0]]))[0].xp,p.xp);
 });
-await test('Admin question save validates options and preserves used questions',async()=>{
+await test('Missing tomorrow content cannot block expired Daily attempts',async()=>{
+ await q('begin');
+ try {
+  const today=(await q("select id from public.daily_challenges where challenge_date=(now() at time zone 'Asia/Kolkata')::date"))[0].id;
+  const aid=(await q("insert into public.daily_attempts(challenge_id,user_id,started_at) values($1,$2,now()-interval '1 hour') returning id",[today,ids[3]]))[0].id;
+  await q("delete from public.daily_challenges where challenge_date=(now() at time zone 'Asia/Kolkata')::date+1");
+  await q("update public.questions set status='archived' where category_id=(select id from public.categories where slug='english')");
+  await q('select sj_private.daily_maintenance()');
+  assert.ok((await q('select completed_at from public.daily_attempts where id=$1',[aid]))[0].completed_at);
+ } finally { await q('rollback'); }
+});
+await test('Admin question save validates options and edits used questions without changing history',async()=>{
  const category=(await q("select id from public.categories where slug='quant'"))[0].id;
  const topic=(await q('select id from public.subtopics where category_id=$1 order by sort_order limit 1',[category]))[0].id;
  const payload={category_id:category,subtopic_id:topic,question_text:'A new test question?',explanation:'',difficulty:'easy',options:[{option_text:'First',is_correct:true},{option_text:'Second',is_correct:false},{option_text:'Third',is_correct:false},{option_text:'Fourth',is_correct:false}]};
+ await asUser(0,()=>rejects(()=>q('select public.admin_save_question($1::jsonb)',[JSON.stringify(payload)]),/ADMIN_REQUIRED/));
+ await asUser(1,()=>rejects(()=>q('select public.admin_save_question($1::jsonb)',[JSON.stringify(payload)]),/ADMIN_REQUIRED/));
  const saved=(await asUser(2,()=>q('select public.admin_save_question($1::jsonb) id',[JSON.stringify(payload)])))[0].id;
  assert.ok(saved);
  await asUser(2,()=>rejects(()=>q('select public.admin_save_question($1::jsonb)',[JSON.stringify({...payload,options:[{option_text:'Same',is_correct:true},{option_text:'Same',is_correct:false},{option_text:'Third',is_correct:false},{option_text:'Fourth',is_correct:false}]})]),/ONE_CORRECT_AND_UNIQUE_OPTIONS_REQUIRED/));
- const used=(await q('select question_id from public.match_questions limit 1'))[0].question_id;
- await asUser(2,()=>rejects(()=>q('select public.admin_save_question($1::jsonb)',[JSON.stringify({...payload,id:used})]),/QUESTION_ALREADY_USED/));
+ const used=(await q('select q.id,q.category_id,q.subtopic_id,q.difficulty from public.match_questions mq join public.questions q on q.id=mq.question_id limit 1'))[0];
+ const daily=(await q('select q.id,q.category_id,q.subtopic_id,q.difficulty from public.daily_challenge_questions dq join public.questions q on q.id=dq.question_id limit 1'))[0];
+ const matchSnapshot=(await q('select snapshot from public.match_questions where question_id=$1 limit 1',[used.id]))[0].snapshot;
+ const dailySnapshot=(await q('select snapshot from public.daily_challenge_questions where question_id=$1 limit 1',[daily.id]))[0].snapshot;
+ const scores=await q('select match_id,user_id,score from public.match_players order by match_id,user_id');
+ await q('begin');
+ try {
+  const count=(await q('select count(*)::int n from public.questions'))[0].n;
+  await asUser(2,()=>q("select public.admin_set_role('student0@example.com','editor',true)"));
+  const other=(await q("select id from public.questions where category_id=$1 and id<>$2 and status='published' limit 1",[used.category_id,used.id]))[0].id;
+  await q('insert into public.player_question_cycles(user_id,category_id,question_ids,next_index,catalog_revision) values($1,$2,array[$3::uuid,$4::uuid],1,-1) on conflict(user_id,category_id) do update set question_ids=excluded.question_ids,next_index=1,catalog_revision=-1',[ids[0],used.category_id,used.id,other]);
+  const edited={...payload,id:used.id,category_id:used.category_id,subtopic_id:used.subtopic_id,difficulty:used.difficulty,question_text:'Updated for future matches?',explanation:'New explanation'};
+  assert.equal((await asUser(0,()=>q('select public.admin_save_question($1::jsonb) id',[JSON.stringify(edited)])))[0].id,used.id);
+  assert.equal((await q('select count(*)::int n from public.questions'))[0].n,count);
+  assert.deepEqual((await q('select snapshot from public.match_questions where question_id=$1 limit 1',[used.id]))[0].snapshot,matchSnapshot);
+  const future=(await q('select sj_private.question_snapshot($1) data',[used.id]))[0].data;
+  assert.equal(future.question_text,edited.question_text);
+  assert.notEqual(future.correct_option_id,matchSnapshot.correct_option_id);
+  const cycle=(await q('select (sj_private.prepare_question_cycle($1,$2)).question_ids ids',[ids[0],used.category_id]))[0].ids;
+  assert.equal(cycle[0],used.id);
+  assert.equal((await q('select next_index from public.player_question_cycles where user_id=$1 and category_id=$2',[ids[0],used.category_id]))[0].next_index,1);
+  const dailyEdit={...edited,id:daily.id,category_id:daily.category_id,subtopic_id:daily.subtopic_id,difficulty:daily.difficulty,question_text:'Updated for future daily challenges?'};
+  assert.equal((await asUser(2,()=>q('select public.admin_save_question($1::jsonb) id',[JSON.stringify(dailyEdit)])))[0].id,daily.id);
+  assert.deepEqual((await q('select snapshot from public.daily_challenge_questions where question_id=$1 limit 1',[daily.id]))[0].snapshot,dailySnapshot);
+  assert.deepEqual(await q('select match_id,user_id,score from public.match_players order by match_id,user_id'),scores);
+ } finally { await q('rollback'); }
 });
 await test('Daily scheduling and analytics enforce admin permission',async()=>{
  const day=(await q("select ((now() at time zone 'Asia/Kolkata')::date+3)::text as \"day\""))[0].day;
@@ -476,18 +585,25 @@ await test('Automatic daily sets rotate globally and stay unique across a cycle 
  const second=(await q("select sj_private.generate_daily('2027-01-02') id"))[0].id;
  const firstIds=(await q('select question_id from public.daily_challenge_questions where challenge_id=$1 order by question_index',[first])).map(row=>row.question_id);
  const secondIds=(await q('select question_id from public.daily_challenge_questions where challenge_id=$1 order by question_index',[second])).map(row=>row.question_id);
- assert.equal(new Set(firstIds).size,10);
- assert.equal(new Set(secondIds).size,10);
+ assert.equal(new Set(firstIds).size,4);
+ assert.equal(new Set(secondIds).size,4);
  assert.equal(firstIds.filter(id=>secondIds.includes(id)).length,0);
+ const rounds=await q(`select d.challenge_id,d.question_index,c.slug,(d.snapshot->>'time_limit_seconds')::int seconds
+   from public.daily_challenge_questions d join public.categories c on c.id=(d.snapshot->>'category_id')::uuid
+   where d.challenge_id in ($1,$2) order by d.challenge_id,d.question_index`,[first,second]);
+ for(const cid of [first,second]) assert.deepEqual(rounds.filter(r=>r.challenge_id===cid).map(r=>[r.slug,r.seconds]),
+   [['reasoning',40],['general-awareness',15],['quant',40],['english',15]]);
  const cycle=(await q('select question_ids,next_index from sj_private.daily_question_cycle where singleton'))[0];
  const remaining=cycle.question_ids.slice(-3);
  await q('update sj_private.daily_question_cycle set next_index=$1 where singleton',[cycle.question_ids.length-3]);
  const third=(await q("select sj_private.generate_daily('2027-01-03') id"))[0].id;
  const thirdIds=(await q('select question_id from public.daily_challenge_questions where challenge_id=$1',[third])).map(row=>row.question_id);
- assert.equal(new Set(thirdIds).size,10);
- for(const id of remaining) assert.ok(thirdIds.includes(id));
+ assert.equal(new Set(thirdIds).size,4);
+ assert.ok(thirdIds.some(id=>remaining.includes(id)));
 });
 await test('Disabled daily questions leave the global unused tail until re-enabled',async()=>{
+ await q("update sj_private.daily_question_cycle set question_ids='{}',next_index=0,catalog_revision=-1 where singleton");
+ await q('select sj_private.prepare_daily_question_cycle()');
  const before=(await q('select question_ids,next_index from sj_private.daily_question_cycle where singleton'))[0];
  const upcoming=before.question_ids[before.next_index];
  await q("update public.questions set status='archived' where id=$1",[upcoming]);
@@ -499,13 +615,15 @@ await test('Disabled daily questions leave the global unused tail until re-enabl
 });
 await test('A manually scheduled daily set keeps staff order without advancing the automatic bag',async()=>{
  const day=(await q("select ((now() at time zone 'Asia/Kolkata')::date+7)::text as \"day\""))[0].day;
- const chosen=(await q("select id from public.questions where status='published' order by id limit 10")).map(row=>row.id);
+ const chosen=(await q("select (select q.id from public.questions q join public.categories c on c.id=q.category_id where c.slug=b.subject_slug and q.status='published' order by q.id limit 1) id from public.battle_rounds b order by b.round_index")).map(row=>row.id);
  const before=(await q('select question_ids,next_index from sj_private.daily_question_cycle where singleton'))[0];
  const cid=(await asUser(2,()=>q("select public.admin_schedule_daily($1,'Manual shuffle test',$2) id",[day,chosen])))[0].id;
  const assigned=(await q('select question_id from public.daily_challenge_questions where challenge_id=$1 order by question_index',[cid])).map(row=>row.question_id);
  const after=(await q('select question_ids,next_index from sj_private.daily_question_cycle where singleton'))[0];
  assert.deepEqual(assigned,chosen);
  assert.deepEqual(after,before);
+ await asUser(2,()=>rejects(()=>q("select public.admin_schedule_daily($1,'Invalid test',$2)",[day,chosen.slice(0,3)]),/FOUR_SUBJECT_QUESTIONS_REQUIRED/));
+ await asUser(2,()=>rejects(()=>q("select public.admin_schedule_daily($1,'Invalid test',$2)",[day,[chosen[0],chosen[0],chosen[2],chosen[3]]]),/FOUR_SUBJECT_QUESTIONS_REQUIRED/));
 });
 await test('Starting the shared daily set marks its questions once for that learner',async()=>{
  await asUser(3,()=>q("select public.complete_profile('Daily Shuffle Learner','+919876543213')"));
@@ -514,11 +632,11 @@ await test('Starting the shared daily set marks its questions once for that lear
  const prior=(await q('select q.question_id,p.category_id from public.daily_challenge_questions q join public.questions p on p.id=q.question_id where q.challenge_id=$1 order by q.question_index limit 1',[today.id]))[0];
  await q('select sj_private.mark_question_seen($1,$2,$3)',[ids[3],prior.category_id,prior.question_id]);
  const started=(await asUser(3,()=>q('select public.start_daily_attempt() data')))[0].data;
- assert.equal(started.question_count,10);
+ assert.equal(started.question_count,4);
  const counted=(await q('select coalesce(sum(next_index),0)::int n from public.player_question_cycles where user_id=$1',[ids[3]]))[0].n;
- assert.equal(counted,10);
+ assert.equal(counted,4);
  await asUser(3,()=>q('select public.start_daily_attempt()'));
- assert.equal((await q('select coalesce(sum(next_index),0)::int n from public.player_question_cycles where user_id=$1',[ids[3]]))[0].n,10);
+ assert.equal((await q('select coalesce(sum(next_index),0)::int n from public.player_question_cycles where user_id=$1',[ids[3]]))[0].n,4);
  assert.equal((await q('select count(*)::int n from public.daily_attempts where user_id=$1 and challenge_id=$2',[ids[3],today.id]))[0].n,1);
 });
 await test('Account deletion is service-only and removes personal data without breaking history',async()=>{

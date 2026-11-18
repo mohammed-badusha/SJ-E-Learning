@@ -35,7 +35,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
       await tester.pumpAndSettle();
-      expect(find.text('Question 2 of 5'), findsOneWidget);
+      expect(find.text('Question 2 of 4'), findsOneWidget);
       expect(find.text('Next question'), findsNothing);
       await tester.pumpWidget(const SizedBox());
       session.dispose();

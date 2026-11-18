@@ -9,6 +9,7 @@ import '../../../shared/widgets.dart';
 import '../../../shared/player_avatar.dart';
 import '../../auth/domain/models.dart';
 import '../../practice/data/quiz_repository.dart';
+import 'question_import_screen.dart';
 
 const userColumns = <String, String>{
   'full_name': 'Full name',
@@ -37,10 +38,12 @@ class AdminDirectory extends StatefulWidget {
     this.categoryId,
     required this.title,
     this.initialSearch = '',
+    this.userDirectory = false,
   });
   final QuizRepository repo;
   final String title, initialSearch;
   final String? categoryId;
+  final bool userDirectory;
   @override
   State<AdminDirectory> createState() => _AdminDirectoryState();
 }
@@ -52,10 +55,17 @@ class _AdminDirectoryState extends State<AdminDirectory> {
   bool loading = false, more = true, exporting = false;
   int generation = 0;
   String? error;
-  bool get users => widget.categoryId == null;
+  int total = 0;
+  String? selectedCategoryId;
+  late final Future<List<QuizCategory>> categories;
+  final expandedIds = <String>{};
+  final details = <String, Future<Map<String, dynamic>>>{};
+  bool get users => widget.userDirectory;
   @override
   void initState() {
     super.initState();
+    selectedCategoryId = widget.categoryId;
+    if (!users) categories = widget.repo.categories();
     widget.repo.session.dataChanges.addListener(onDataChanged);
     load(reset: true);
   }
@@ -72,14 +82,13 @@ class _AdminDirectoryState extends State<AdminDirectory> {
   }
 
   Future<List<Map<String, dynamic>>> page(String? cursor, String filter) async {
-    final result = await widget.repo.rpc(
-      users ? 'admin_user_page' : 'admin_question_page',
-      {
-        if (!users) 'subject_id': widget.categoryId,
-        'search': filter,
-        'after_id': cursor,
-      },
-    );
+    final result = await widget.repo
+        .rpc(users ? 'admin_user_page' : 'admin_question_summary_page', {
+          if (!users) 'subject_id': selectedCategoryId,
+          'search': filter,
+          'after_id': cursor,
+        });
+    if (!users && cursor == null) total = (result['total'] as num).toInt();
     return (result['rows'] as List).cast<Map<String, dynamic>>();
   }
 
@@ -91,6 +100,8 @@ class _AdminDirectoryState extends State<AdminDirectory> {
       if (reset) {
         rows.clear();
         more = true;
+        expandedIds.clear();
+        details.clear();
       }
       loading = true;
       error = null;
@@ -153,14 +164,6 @@ class _AdminDirectoryState extends State<AdminDirectory> {
   }
 
   Future<void> open(Map<String, dynamic> row) async {
-    if (!users) {
-      await context.push(
-        '/admin/question',
-        extra: {...row, 'category_name': widget.title},
-      );
-      if (mounted) await load(reset: true);
-      return;
-    }
     final toggle = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -211,9 +214,303 @@ class _AdminDirectoryState extends State<AdminDirectory> {
     }
   }
 
+  Future<Map<String, dynamic>> detail(String id) => details.putIfAbsent(
+    id,
+    () => widget.repo.rpc('admin_question_detail', {'question_id': id}),
+  );
+
+  void toggleQuestion(String id) {
+    setState(() {
+      if (!expandedIds.remove(id)) {
+        expandedIds.add(id);
+        detail(id);
+      }
+    });
+  }
+
+  Future<void> editQuestion(String id) async {
+    try {
+      final question = await detail(id);
+      if (!mounted) return;
+      await context.push('/admin/question', extra: question);
+      if (mounted) await load(reset: true);
+    } catch (_) {
+      details.remove(id);
+      if (mounted) {
+        showMessage(context, 'Couldn’t open this question. Try again.');
+      }
+    }
+  }
+
+  Future<void> deleteQuestion(String id) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete question?'),
+        content: const Text(
+          'This question will be removed from future quizzes. Past matches and Daily Challenges will keep their saved copies.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await widget.repo.rpc('admin_archive_question', {'question_id': id});
+      if (!mounted) return;
+      setState(() {
+        rows.removeWhere((row) => row['id'] == id);
+        expandedIds.remove(id);
+        details.remove(id);
+        total = (total - 1).clamp(0, 1 << 31);
+      });
+      showMessage(context, 'Question deleted from future quizzes.');
+      await load(reset: true);
+    } catch (_) {
+      if (mounted) {
+        showMessage(context, 'Couldn’t delete this question. Please retry.');
+      }
+    }
+  }
+
+  Widget badge(String label, Color foreground, Color background) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    decoration: BoxDecoration(
+      color: background,
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(color: foreground, fontWeight: FontWeight.w700),
+    ),
+  );
+
+  Widget questionCard(Map<String, dynamic> row) {
+    final id = row['id'] as String;
+    final expanded = expandedIds.contains(id);
+    final difficulty = (row['difficulty'] as String? ?? 'medium').toLowerCase();
+    final difficultyColor = switch (difficulty) {
+      'easy' => const Color(0xFF168438),
+      'hard' => const Color(0xFFC62828),
+      _ => const Color(0xFFA96800),
+    };
+    final difficultyLabel = switch (difficulty) {
+      'easy' => 'Easy',
+      'hard' => 'Hard',
+      _ => 'Moderate',
+    };
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => toggleQuestion(id),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      row['question_text'] as String? ?? '',
+                      maxLines: expanded ? null : 2,
+                      overflow: expanded ? null : TextOverflow.ellipsis,
+                      style: context.type.titleMedium,
+                    ),
+                  ),
+                  Icon(
+                    expanded
+                        ? Icons.keyboard_arrow_up
+                        : Icons.keyboard_arrow_down,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  badge(
+                    row['category_name'] as String? ?? 'Subject',
+                    const Color(0xFF1648A8),
+                    const Color(0xFFDCEAFF),
+                  ),
+                  if (row['topic_name'] is String)
+                    badge(
+                      row['topic_name'] as String,
+                      const Color(0xFF1648A8),
+                      const Color(0xFFD4EDFF),
+                    ),
+                  badge(
+                    difficultyLabel,
+                    difficultyColor,
+                    difficultyColor.withValues(alpha: 0.16),
+                  ),
+                ],
+              ),
+              AnimatedSize(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeInOut,
+                alignment: Alignment.topCenter,
+                child: expanded
+                    ? FutureBuilder<Map<String, dynamic>>(
+                        future: detail(id),
+                        builder: (context, snapshot) {
+                          if (snapshot.hasError) {
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 16),
+                              child: TextButton(
+                                onPressed: () => setState(() {
+                                  details.remove(id);
+                                  detail(id);
+                                }),
+                                child: const Text(
+                                  'Couldn’t load details. Retry',
+                                ),
+                              ),
+                            );
+                          }
+                          if (!snapshot.hasData) {
+                            return const Padding(
+                              padding: EdgeInsets.only(top: 16),
+                              child: LinearProgressIndicator(),
+                            );
+                          }
+                          final question = snapshot.data!;
+                          final options = (question['options'] as List?) ?? [];
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const Divider(height: 24),
+                              for (var i = 0; i < options.length; i++)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 6),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: options[i]['is_correct'] == true
+                                          ? const Color(
+                                              0xFF22C55E,
+                                            ).withValues(alpha: 0.14)
+                                          : null,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        CircleAvatar(
+                                          radius: 16,
+                                          backgroundColor:
+                                              options[i]['is_correct'] == true
+                                              ? const Color(0xFF168438)
+                                              : context.tokens.line,
+                                          child: Text(
+                                            String.fromCharCode(65 + i),
+                                            style: TextStyle(
+                                              color:
+                                                  options[i]['is_correct'] ==
+                                                      true
+                                                  ? Colors.white
+                                                  : context.tokens.ink,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            options[i]['option_text']
+                                                    as String? ??
+                                                '',
+                                            style: TextStyle(
+                                              color:
+                                                  options[i]['is_correct'] ==
+                                                      true
+                                                  ? const Color(0xFF168438)
+                                                  : null,
+                                              fontWeight:
+                                                  options[i]['is_correct'] ==
+                                                      true
+                                                  ? FontWeight.w700
+                                                  : null,
+                                            ),
+                                          ),
+                                        ),
+                                        if (options[i]['is_correct'] == true)
+                                          const Icon(
+                                            Icons.check_rounded,
+                                            color: Color(0xFF168438),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              if ((question['explanation'] as String? ?? '')
+                                  .trim()
+                                  .isNotEmpty)
+                                Container(
+                                  margin: const EdgeInsets.only(top: 8),
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: const Color(
+                                      0xFFFFE79A,
+                                    ).withValues(alpha: 0.5),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    'Explanation: ${question['explanation']}',
+                                  ),
+                                ),
+                              if (widget.repo.session.role.canEdit)
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: Wrap(
+                                    spacing: 8,
+                                    children: [
+                                      TextButton.icon(
+                                        onPressed: () => editQuestion(id),
+                                        icon: const Icon(Icons.edit_outlined),
+                                        label: const Text('Edit'),
+                                      ),
+                                      TextButton.icon(
+                                        onPressed: () => deleteQuestion(id),
+                                        icon: const Icon(Icons.delete_outline),
+                                        label: const Text('Delete'),
+                                        style: TextButton.styleFrom(
+                                          foregroundColor: Theme.of(
+                                            context,
+                                          ).colorScheme.error,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          );
+                        },
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: ArenaBar(title: Text(widget.title)),
+    appBar: ArenaBar(title: Text(users ? widget.title : 'Question Bank')),
     body: PageBody(
       maxWidth: 850,
       child: Column(
@@ -223,13 +520,47 @@ class _AdminDirectoryState extends State<AdminDirectory> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (!users && widget.repo.session.role.canEdit) ...[
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      FilledButton.icon(
+                        onPressed: () async {
+                          await context.push('/admin/question');
+                          if (mounted) await load(reset: true);
+                        },
+                        icon: const Icon(Icons.add),
+                        label: const Text('Add Manually'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          final message = await Navigator.push<String>(
+                            context,
+                            MaterialPageRoute<String>(
+                              builder: (_) =>
+                                  QuestionImportScreen(repo: widget.repo),
+                            ),
+                          );
+                          if (context.mounted && message != null) {
+                            showMessage(context, message);
+                          }
+                          if (mounted) await load(reset: true);
+                        },
+                        icon: const Icon(Icons.upload_file_outlined),
+                        label: const Text('Bulk Upload'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 TextField(
                   controller: search,
                   textInputAction: TextInputAction.search,
                   decoration: InputDecoration(
                     labelText: users
                         ? 'Search name, email or phone'
-                        : 'Search this category',
+                        : 'Search questions or topics',
                     prefixIcon: const Icon(Icons.search),
                   ),
                   onSubmitted: (v) {
@@ -237,6 +568,52 @@ class _AdminDirectoryState extends State<AdminDirectory> {
                     load(reset: true);
                   },
                 ),
+                if (!users) ...[
+                  const SizedBox(height: 12),
+                  FutureBuilder<List<QuizCategory>>(
+                    future: categories,
+                    builder: (context, snapshot) =>
+                        DropdownButtonFormField<String>(
+                          key: ValueKey(
+                            '$selectedCategoryId:${snapshot.hasData}',
+                          ),
+                          initialValue:
+                              (snapshot.data ?? <QuizCategory>[]).any(
+                                (category) => category.id == selectedCategoryId,
+                              )
+                              ? selectedCategoryId
+                              : '',
+                          decoration: const InputDecoration(
+                            labelText: 'Filter by Subject',
+                          ),
+                          items: [
+                            const DropdownMenuItem<String>(
+                              value: '',
+                              child: Text('All Subjects'),
+                            ),
+                            for (final category
+                                in snapshot.data ?? <QuizCategory>[])
+                              DropdownMenuItem(
+                                value: category.id,
+                                child: Text(category.name),
+                              ),
+                          ],
+                          onChanged: snapshot.hasData
+                              ? (value) {
+                                  selectedCategoryId = value == ''
+                                      ? null
+                                      : value;
+                                  load(reset: true);
+                                }
+                              : null,
+                        ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    '$total questions found',
+                    style: context.type.titleMedium,
+                  ),
+                ],
                 if (users)
                   Align(
                     alignment: Alignment.centerRight,
@@ -280,36 +657,22 @@ class _AdminDirectoryState extends State<AdminDirectory> {
                         return const SizedBox(height: 20);
                       }
                       final row = rows[index];
+                      if (!users) return questionCard(row);
                       return Card(
                         child: ListTile(
                           onTap: () => open(row),
-                          leading: users
-                              ? PlayerAvatar(
-                                  name:
-                                      row['full_name'] as String? ?? 'Learner',
-                                  reference: row['avatar_url'] as String?,
-                                  size: 38,
-                                )
-                              : Icon(
-                                  row['status'] == 'published'
-                                      ? Icons.check_circle_outline
-                                      : Icons.edit_note,
-                                ),
+                          leading: PlayerAvatar(
+                            name: row['full_name'] as String? ?? 'Learner',
+                            reference: row['avatar_url'] as String?,
+                            size: 38,
+                          ),
                           title: Text(
-                            users
-                                ? (row['full_name'].toString().isEmpty
-                                      ? 'Unnamed learner'
-                                      : row['full_name'])
-                                : row['question_text'],
+                            row['full_name'].toString().isEmpty
+                                ? 'Unnamed learner'
+                                : row['full_name'],
                           ),
                           subtitle: Text(
-                            users
-                                ? '${row['email'] ?? '—'} · Level ${row['level']}'
-                                : [
-                                    row['topic_name'],
-                                    row['difficulty'],
-                                    row['status'],
-                                  ].whereType<String>().join(' · '),
+                            '${row['email'] ?? '—'} · Level ${row['level']}',
                           ),
                           trailing: const Icon(Icons.chevron_right),
                         ),

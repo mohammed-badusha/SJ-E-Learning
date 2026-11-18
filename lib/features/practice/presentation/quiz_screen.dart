@@ -57,7 +57,7 @@ class _QuizState extends ConsumerState<QuizScreen> {
     });
     try {
       if (repository.session.preview) {
-        count = previewQuestions.length;
+        count = widget.mode == 'daily' ? 4 : previewQuestions.length;
         showQuestion(Map.of(previewQuestions[0]));
       } else {
         final data = await repository.rpc(

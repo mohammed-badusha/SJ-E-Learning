@@ -58,7 +58,7 @@ class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
     super.dispose();
   }
 
-  Future<void> save({bool duplicate = false}) async {
+  Future<void> save() async {
     final values = options.map((o) => o.text.trim()).toList();
     if (category == null ||
         topic == null ||
@@ -84,8 +84,7 @@ class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
             'admin_save_question',
             params: {
               'payload': {
-                if (widget.question != null && !duplicate)
-                  'id': widget.question!['id'],
+                if (widget.question != null) 'id': widget.question!['id'],
                 'category_id': category,
                 'subtopic_id': topic,
                 if (widget.question?['image_url'] != null)
@@ -101,12 +100,11 @@ class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
             },
           );
       if (mounted) context.pop();
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
         setState(
-          () => error = e.toString().contains('QUESTION_ALREADY_USED')
-              ? 'This question has been used. Save a new copy to preserve match history.'
-              : 'Couldn’t save. Check the subject, topic, options and connection.',
+          () => error =
+              'Couldn’t save. Check the subject, topic, options and connection.',
         );
       }
     } finally {
@@ -221,6 +219,7 @@ class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
                     correct == i
                         ? Icons.radio_button_checked
                         : Icons.radio_button_off,
+                    color: correct == i ? context.tokens.success : null,
                   ),
                   tooltip: 'Mark option ${String.fromCharCode(65 + i)} correct',
                 ),
@@ -229,7 +228,40 @@ class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
                     controller: options[i],
                     enabled: canEdit,
                     decoration: InputDecoration(
-                      labelText: 'Option ${String.fromCharCode(65 + i)}',
+                      labelText:
+                          'Option ${String.fromCharCode(65 + i)}${correct == i ? ' (Correct)' : ''}',
+                      labelStyle: correct == i
+                          ? TextStyle(color: context.tokens.success)
+                          : null,
+                      floatingLabelStyle: correct == i
+                          ? TextStyle(color: context.tokens.success)
+                          : null,
+                      fillColor: correct == i
+                          ? context.tokens.success.withValues(alpha: 0.08)
+                          : null,
+                      enabledBorder: correct == i
+                          ? OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: BorderSide(
+                                color: context.tokens.success,
+                              ),
+                            )
+                          : null,
+                      focusedBorder: correct == i
+                          ? OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: BorderSide(
+                                color: context.tokens.success,
+                                width: 1.5,
+                              ),
+                            )
+                          : null,
+                      suffixIcon: correct == i
+                          ? Icon(
+                              Icons.check_circle_rounded,
+                              color: context.tokens.success,
+                            )
+                          : null,
                     ),
                   ),
                 ),
@@ -278,11 +310,6 @@ class _QuestionEditorState extends ConsumerState<QuestionEditorScreen> {
             busy: saving,
             onPressed: () => save(),
           ),
-          if (widget.question != null)
-            TextButton(
-              onPressed: saving ? null : () => save(duplicate: true),
-              child: const Text('Save as a new copy'),
-            ),
         ],
       ],
     );

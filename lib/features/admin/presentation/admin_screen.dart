@@ -100,6 +100,7 @@ class _AdminState extends ConsumerState<AdminScreen> {
           categoryId: id,
           title: title,
           initialSearch: id == null ? '' : query,
+          userDirectory: section == 3,
         ),
       ),
     );
@@ -714,7 +715,7 @@ class _AdminState extends ConsumerState<AdminScreen> {
                       ? TextButton(
                           onPressed: () async {
                             final title = TextEditingController(
-                              text: day['title'] ?? 'Your daily ten',
+                              text: day['title'] ?? 'Your daily four',
                             );
                             final approved = await showDialog<bool>(
                               context: context,

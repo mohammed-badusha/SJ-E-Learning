@@ -27,7 +27,11 @@ export async function verifyRedesign({test,q,asUser,rejects,assert,ids}) {
   for(let i=0;i<12;i++) {
    const mid=(await q("select sj_private.new_match($1,$2,null,null,'bot') id",[ids[0],bot.id]))[0].id;
    const plan=await q('select question_index,response_ms,will_be_correct from public.bot_plans where match_id=$1 order by question_index',[mid]);
-   assert.ok(plan.every(p=>p.response_ms>0&&p.response_ms<(p.question_index%2===0?40000:15000)));
+   assert.ok(plan.every(p=>p.response_ms>0&&(
+    p.question_index%2===0
+     ? p.response_ms>=28000&&(p.response_ms<40000||p.response_ms===40000&&!p.will_be_correct)
+     : p.response_ms<15000
+   )));
    slots.add(plan.filter(p=>p.will_be_correct).map(p=>p.question_index).join(','));
   }
   assert.ok(slots.size>1,'correct rounds must not always be a fixed prefix');
@@ -49,10 +53,10 @@ export async function verifyRedesign({test,q,asUser,rejects,assert,ids}) {
   assert.equal(counts.n,20);assert.equal(counts.unique_count,20);
   await asUser(0,()=>rejects(()=>q("select public.start_practice($1,null,true,'NONEXISTENT',null,25)",[category]),/NOT_ENOUGH_QUESTIONS/));
  });
- await test('Default hierarchy and ten-question daily challenge are database owned',async()=>{
+ await test('Default hierarchy and four-question daily challenge are database owned',async()=>{
   assert.equal((await q('select count(*)::int n from public.subtopics'))[0].n,56);
   const daily=(await asUser(0,()=>q('select public.get_today_challenge() data')))[0].data;
-  assert.equal(daily.question_count,10);
+  assert.equal(daily.question_count,4);
   await asUser(2,()=>rejects(()=>q("select public.admin_save_setting('questions_per_match','10')"),/INVALID_SETTING/));
   await asUser(2,()=>rejects(()=>q("select public.admin_save_setting('search_timeout_seconds','20')"),/INVALID_SETTING/));
  });
@@ -63,7 +67,7 @@ export async function verifyRedesign({test,q,asUser,rejects,assert,ids}) {
   const completed=(await q('select id from public.daily_attempts where user_id=$1 and completed_at is not null limit 1',[ids[0]]))[0];
   assert.ok(completed);
   const review=(await asUser(0,()=>q('select public.get_daily_review($1) data',[completed.id])))[0].data;
-  assert.equal(review.questions.length,10);
+  assert.equal(review.questions.length,4);
   await asUser(1,()=>rejects(()=>q('select public.get_daily_review($1)',[completed.id]),/REVIEW_UNAVAILABLE/));
   const botEvents=await q("select payload from realtime.sent where event='opponent_answered' and payload->>'user_id' in (select id::text from public.profiles where is_bot)");
   assert.ok(botEvents.length>=4);
