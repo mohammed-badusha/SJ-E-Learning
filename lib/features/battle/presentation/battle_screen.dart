@@ -30,7 +30,7 @@ class _BattleState extends ConsumerState<BattleScreen>
   Map<String, dynamic>? data;
   Timer? polling, ticker;
   RealtimeChannel? channel;
-  bool busy = false, submitting = false, active = true;
+  bool busy = false, heartbeatBusy = false, submitting = false, active = true;
   bool refreshPending = false;
   String? selected, error;
   int previousIndex = -1;
@@ -55,10 +55,15 @@ class _BattleState extends ConsumerState<BattleScreen>
     ]) {
       channel!.onBroadcast(event: event, callback: (_) => refresh());
     }
-    channel!.subscribe();
+    channel!.subscribe((status, _) {
+      if (status == RealtimeSubscribeStatus.subscribed && mounted && active) {
+        // Recover any event sent before this channel joined or rejoined.
+        unawaited(refresh());
+      }
+    });
     refresh();
     polling = Timer.periodic(const Duration(seconds: 2), (_) {
-      if (active) refresh();
+      if (active) unawaited(heartbeat());
     });
     ticker = Timer.periodic(const Duration(milliseconds: 150), (_) {
       if (active &&
@@ -94,6 +99,48 @@ class _BattleState extends ConsumerState<BattleScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     active = state == AppLifecycleState.resumed;
     if (active) refresh();
+  }
+
+  Future<void> heartbeat() async {
+    if (!mounted ||
+        !active ||
+        busy ||
+        heartbeatBusy ||
+        ['completed', 'abandoned'].contains(data?['status'])) {
+      return;
+    }
+    heartbeatBusy = true;
+    final sent = DateTime.now();
+    try {
+      final status = await repo.rpc('heartbeat_match', {
+        'match_id': widget.matchId,
+      });
+      if (!mounted || !active) return;
+      offset = DateTime.parse(status['server_now']).difference(
+        sent.add(
+          Duration(
+            milliseconds: DateTime.now().difference(sent).inMilliseconds ~/ 2,
+          ),
+        ),
+      );
+      final current = data;
+      if (current == null ||
+          status['status'] != current['status'] ||
+          status['phase'] != current['phase'] ||
+          status['question_index'] != current['question_index'] ||
+          status['answered_count'] != (current['answered'] as List?)?.length ||
+          status['opponent_connected'] !=
+              (current['players'] as List).cast<Map>().firstWhere(
+                (player) => player['id'] != repo.session.profile!.id,
+              )['connected']) {
+        await refresh();
+      }
+    } catch (_) {
+      // A full-state read also sends a heartbeat and works with older servers.
+      if (mounted && active) await refresh();
+    } finally {
+      heartbeatBusy = false;
+    }
   }
 
   Future<void> refresh() async {

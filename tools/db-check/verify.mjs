@@ -769,6 +769,59 @@ await test('Starting the shared daily set marks its questions once for that lear
  assert.equal((await q('select coalesce(sum(next_index),0)::int n from public.player_question_cycles where user_id=$1',[ids[3]]))[0].n,4);
  assert.equal((await q('select count(*)::int n from public.daily_attempts where user_id=$1 and challenge_id=$2',[ids[3],today.id]))[0].n,1);
 });
+await test('Lightweight heartbeat is participant-only and reports state changes',async()=>{
+ await asUser(3,()=>rejects(()=>q('select public.heartbeat_match($1)',[mid]),/MATCH_NOT_FOUND/));
+ const bot=(await q("insert into public.profiles(full_name,is_bot,rating,level,avatar_url) values('Timing Bot',true,1000,8,'color:#5B4CFF') returning id"))[0].id;
+ const match=(await q("select sj_private.new_match($1,$2,null,null,'bot') id",[ids[3],bot]))[0].id;
+ const state=(await asUser(3,()=>q('select public.heartbeat_match($1) data',[match])))[0].data;
+ assert.equal(state.status,'pending');
+ assert.equal(state.phase,'countdown');
+ assert.equal(state.question_index,0);
+ assert.equal(state.opponent_connected,true);
+ assert.equal(state.answered_count,0);
+ await q('update public.bot_plans set response_ms=30000 where match_id=$1 and question_index=0',[match]);
+ await q("update public.matches set next_tick_at=now()-interval '1 second' where id=$1",[match]);
+ await q('select sj_private.tick_all()');
+ const scheduled=(await q(`select m.phase,m.next_tick_at,mq.started_at,mq.deadline_at
+  from public.matches m join public.match_questions mq on mq.match_id=m.id and mq.question_index=0
+  where m.id=$1`,[match]))[0];
+ assert.equal(scheduled.phase,'question');
+ assert.equal(new Date(scheduled.next_tick_at).getTime(),new Date(scheduled.started_at).getTime()+30000);
+ const option=(await asUser(3,()=>q('select public.get_match_state($1) data',[match])))[0].data.question.options[0].id;
+ await asUser(3,()=>q('select public.submit_answer($1,0,$2)',[match,option]));
+ assert.equal(new Date((await q('select next_tick_at from public.matches where id=$1',[match]))[0].next_tick_at).getTime(),
+  new Date(scheduled.next_tick_at).getTime(),'early human answer must not cancel bot wake-up');
+ await q("update public.match_questions set started_at=now()-interval '31 seconds',deadline_at=now()+interval '9 seconds' where match_id=$1 and question_index=0",[match]);
+ await q("update public.matches set next_tick_at=now()-interval '1 second' where id=$1",[match]);
+ await q('select sj_private.tick_all()');
+ assert.equal((await q('select count(*)::int n from public.match_answers where match_id=$1',[match]))[0].n,2);
+ assert.equal((await q('select phase from public.matches where id=$1',[match]))[0].phase,'result');
+});
+await test('Thirty scheduled matches wake only when due',async()=>{
+ await q('begin');
+ try {
+  const bot=(await q("insert into public.profiles(full_name,is_bot,rating,level,avatar_url) values('Batch Bot',true,1000,8,'color:#5B4CFF') returning id"))[0].id;
+  const matches=[];
+  for(let i=0;i<30;i++) {
+   const player=(await q(`insert into auth.users(id,email,email_confirmed_at,raw_app_meta_data)
+    values(gen_random_uuid(),$1,now(),'{"provider":"google"}') returning id`,[`batch${i}@example.com`]))[0].id;
+   await q('update public.profiles set full_name=$2,phone=$3,profile_completed=true where id=$1',
+    [player,`Batch player ${i}`,`+9198765433${String(i).padStart(2,'0')}`]);
+   const match=(await q("select sj_private.new_match($1,$2,null,null,'bot') id",[player,bot]))[0].id;
+   matches.push(match);
+  }
+  await q("update public.matches set next_tick_at=now()+interval '20 seconds' where id=any($1::uuid[])",[matches]);
+  await q("update public.matches set next_tick_at=now()-interval '1 second' where id=$1",[matches[0]]);
+  const before=performance.now();
+  await q('select sj_private.tick_all()');
+  const elapsed=Math.round(performance.now()-before);
+  assert.equal((await q('select count(*)::int n from public.matches where id=any($1::uuid[]) and phase=$2',[matches,'question']))[0].n,1);
+  console.log(`  30-match due-filter check: ${elapsed} ms in local PGlite`);
+  await q("update public.matches set next_tick_at=now()-interval '1 second' where id=any($1::uuid[])",[matches.slice(1)]);
+  await q('select sj_private.tick_all()');
+  assert.equal((await q('select count(*)::int n from public.matches where id=any($1::uuid[]) and phase=$2',[matches,'question']))[0].n,30);
+ } finally { await q('rollback'); }
+});
 await test('Account deletion is service-only and removes personal data without breaking history',async()=>{
  await asUser(0,()=>rejects(()=>q('select public.anonymize_account($1)',[ids[1]]),/permission denied/));
  await q('select sj_private.next_bot_for_player($1)',[ids[1]]);

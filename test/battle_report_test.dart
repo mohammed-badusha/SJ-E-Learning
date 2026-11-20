@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:ui' show ImageByteFormat;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'support/load_fonts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,7 +15,14 @@ import 'package:quiz_arena/features/results/presentation/battle_result_screen.da
 import 'support/battle_fixture.dart';
 
 void main() {
-  setUpAll(loadAppFonts);
+  setUpAll(() async {
+    await loadAppFonts();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (_) async => Directory.systemTemp.path,
+        );
+  });
   test('Trophy boundaries promote and demote at the exact thresholds', () {
     expect(RankTier.forTrophies(0), RankTier.bronze);
     expect(RankTier.forTrophies(999), RankTier.bronze);
