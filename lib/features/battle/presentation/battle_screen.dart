@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../domain/match_heartbeat.dart';
 import 'duel_intro.dart';
 import '../../../shared/arena_motion.dart';
 import '../../../shared/player_avatar.dart';
@@ -123,16 +124,7 @@ class _BattleState extends ConsumerState<BattleScreen>
           ),
         ),
       );
-      final current = data;
-      if (current == null ||
-          status['status'] != current['status'] ||
-          status['phase'] != current['phase'] ||
-          status['question_index'] != current['question_index'] ||
-          status['answered_count'] != (current['answered'] as List?)?.length ||
-          status['opponent_connected'] !=
-              (current['players'] as List).cast<Map>().firstWhere(
-                (player) => player['id'] != repo.session.profile!.id,
-              )['connected']) {
+      if (matchHeartbeatNeedsRefresh(status, data, repo.session.profile!.id)) {
         await refresh();
       }
     } catch (_) {
