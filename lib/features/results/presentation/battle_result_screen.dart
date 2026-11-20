@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../../../shared/arena_motion.dart';
 import '../../../shared/trophy.dart';
 import '../../../shared/arena_panel.dart';
@@ -35,6 +37,7 @@ class _BattleResultState extends ConsumerState<BattleResultScreen> {
   void initState() {
     super.initState();
     load();
+    unawaited(ref.read(sessionProvider).refresh());
   }
 
   void load() {
@@ -323,9 +326,6 @@ class _BattleResultState extends ConsumerState<BattleResultScreen> {
                       ],
                     ),
                   ),
-                  if (report.questions.isNotEmpty) ...[
-                    _CategoryBreakdown(questions: report.questions),
-                  ],
                   const SizedBox(height: 16),
                   Text(
                     '${report.roundsPlayed} of ${report.questionCount} questions played · ${answerTime(report.durationMs)} match time',
@@ -513,58 +513,4 @@ class _CompareRow extends StatelessWidget {
       ],
     ),
   );
-}
-
-class _CategoryBreakdown extends StatelessWidget {
-  const _CategoryBreakdown({required this.questions});
-  final List<Map<String, dynamic>> questions;
-  @override
-  Widget build(BuildContext context) {
-    final groups = <String, List<Map<String, dynamic>>>{};
-    for (final question in questions) {
-      groups
-          .putIfAbsent(
-            question['category_name'] as String? ?? 'Quiz questions',
-            () => [],
-          )
-          .add(question);
-    }
-    return ArenaCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Accuracy by subject', style: context.type.titleMedium),
-          const SizedBox(height: 16),
-          for (final entry in groups.entries)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(entry.key, style: context.type.titleSmall),
-                      ),
-                      Text(
-                        '${entry.value.where((q) => q['is_correct'] == true).length}/${entry.value.length}',
-                        style: context.type.bodySmall,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  LinearProgressIndicator(
-                    value:
-                        entry.value
-                            .where((q) => q['is_correct'] == true)
-                            .length /
-                        entry.value.length,
-                    minHeight: 5,
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
 }

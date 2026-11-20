@@ -338,6 +338,13 @@ class _BattleState extends ConsumerState<BattleScreen>
     final finished = ['completed', 'abandoned'].contains(data!['status']);
     final question = data!['question'] as Map?;
     final result = data!['result'] as Map?;
+    final roundIndex = data!['question_index'] as int;
+    final finalRound = roundIndex == (data!['question_count'] as int) - 1;
+    final subjectName = (question?['subject_name'] as String?)?.trim();
+    final roundTitle = finalRound ? 'Final round' : 'Round ${roundIndex + 1}';
+    final roundLabel = subjectName == null || subjectName.isEmpty
+        ? roundTitle
+        : '$roundTitle · $subjectName';
     if (finished) {
       return BattleResultScreen(
         matchId: widget.matchId,
@@ -448,17 +455,14 @@ class _BattleState extends ConsumerState<BattleScreen>
                         ),
                       ),
                       const SizedBox(height: 24),
-                      if (data!['question_index'] ==
-                          (data!['question_count'] as int) - 1) ...[
-                        Text(
-                          'Final round · English',
-                          style: TextStyle(
-                            color: context.tokens.warning,
-                            fontWeight: FontWeight.w500,
-                          ),
+                      Text(
+                        roundLabel,
+                        style: TextStyle(
+                          color: context.tokens.warning,
+                          fontWeight: FontWeight.w500,
                         ),
-                        const SizedBox(height: 16),
-                      ],
+                      ),
+                      const SizedBox(height: 16),
                       ArenaCard(
                         child: Text(
                           question['question_text'],

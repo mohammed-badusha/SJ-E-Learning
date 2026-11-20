@@ -5,10 +5,10 @@ export async function verifyRedesign({test,q,asUser,rejects,assert,ids}) {
    assert.equal(Number((await q('select sj_private.battle_score($1,$2,$3) s',[correct,elapsed,duration]))[0].s),expected);
   }
  });
- await test('Every new battle has four ordered subjects and the correct server timers',async()=>{
+ await test('Every new battle has four Maths rounds with 40-second server timers',async()=>{
   const match=(await q('select id from public.matches where rules_version=2 limit 1'))[0].id;
   const rounds=await q("select c.slug,(mq.snapshot->>'time_limit_seconds')::int seconds from public.match_questions mq join public.categories c on c.id=(mq.snapshot->>'category_id')::uuid where mq.match_id=$1 order by question_index",[match]);
-  assert.deepEqual(rounds,[{slug:'reasoning',seconds:40},{slug:'general-awareness',seconds:15},{slug:'quant',seconds:40},{slug:'english',seconds:15}]);
+  assert.deepEqual(rounds,Array.from({length:4},()=>({slug:'quant',seconds:40})));
   assert.equal(Number((await q("select value from public.app_settings where key='search_timeout_seconds'"))[0].value),10);
  });
  await test('Bot plans use the new private identity pool and contain 2, 3 or 4 correct rounds',async()=>{
@@ -27,11 +27,8 @@ export async function verifyRedesign({test,q,asUser,rejects,assert,ids}) {
   for(let i=0;i<12;i++) {
    const mid=(await q("select sj_private.new_match($1,$2,null,null,'bot') id",[ids[0],bot.id]))[0].id;
    const plan=await q('select question_index,response_ms,will_be_correct from public.bot_plans where match_id=$1 order by question_index',[mid]);
-   assert.ok(plan.every(p=>p.response_ms>0&&(
-    p.question_index%2===0
-     ? p.response_ms>=28000&&(p.response_ms<40000||p.response_ms===40000&&!p.will_be_correct)
-     : p.response_ms<15000
-   )));
+   assert.ok(plan.every(p=>p.response_ms>=28000&&
+     (p.response_ms<40000||p.response_ms===40000&&!p.will_be_correct)));
    slots.add(plan.filter(p=>p.will_be_correct).map(p=>p.question_index).join(','));
   }
   assert.ok(slots.size>1,'correct rounds must not always be a fixed prefix');

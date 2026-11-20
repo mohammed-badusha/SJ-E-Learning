@@ -33,6 +33,7 @@ class _QuizState extends ConsumerState<QuizScreen> {
   Map<String, dynamic>? question, result;
   String? attempt, selected, error;
   int index = 0, count = 5, score = 0, correct = 0;
+  int? xpGained;
   double remaining = 15;
   DateTime? deadline;
   Timer? timer, autoAdvance;
@@ -81,6 +82,7 @@ class _QuizState extends ConsumerState<QuizScreen> {
         if (data['completed'] == true) {
           score = data['score'] ?? 0;
           correct = data['correct_count'] ?? 0;
+          xpGained = (data['xp_gained'] as num?)?.toInt();
           finished = true;
           audio.leaveGame(this);
         } else {
@@ -225,6 +227,7 @@ class _QuizState extends ConsumerState<QuizScreen> {
           if (!mounted) return;
           score = data['score'];
           correct = data['correct_count'];
+          xpGained = (data['xp_gained'] as num?)?.toInt();
         } catch (_) {
           if (mounted) {
             setState(
@@ -343,6 +346,24 @@ class _QuizState extends ConsumerState<QuizScreen> {
                 ),
               ),
               const SizedBox(height: 24),
+              if (widget.mode == 'daily' && xpGained != null) ...[
+                ArenaCard(
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.workspace_premium_rounded,
+                        color: context.tokens.warning,
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        '+$xpGained XP earned',
+                        style: context.type.titleMedium,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+              ],
               PrimaryButton(
                 label: 'Review answers',
                 icon: Icons.fact_check_rounded,

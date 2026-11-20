@@ -46,7 +46,10 @@ let tests=0;
 async function test(name,fn) { try {await fn(); console.log('PASS',name);tests++;} catch(e) {console.error('FAIL',name,e.message, e.where ?? '');process.exit(1);} }
 async function asUser(i,fn) {
  await db.exec(`set role authenticated; set request.jwt.claim.sub='${ids[i]}';`);
- try {return await fn();} finally {await db.exec('reset role;');}
+ let failure;
+ try {return await fn();}
+ catch(error) {failure=error;throw error;}
+ finally {try {await db.exec('reset role;');} catch(error) {if(!failure) throw error;}}
 }
 async function q(sql,params=[]) {return (await db.query(sql,params)).rows;}
 async function rejects(fn,pattern) {await assert.rejects(fn,pattern);}
@@ -72,8 +75,20 @@ await test('Students cannot read correct answers or question snapshots',()=>asUs
 }));
 await test('Students cannot modify rating or read another phone',()=>asUser(0,async()=>{
  await rejects(()=>q('update public.profiles set rating=9999'),/permission denied/);
+ await rejects(()=>q('update public.profiles set xp=9999'),/permission denied/);
  assert.equal((await q('select id,phone from public.profiles where id=$1',[ids[1]])).length,0);
 }));
+await test('Balanced XP thresholds and existing player totals remain intact',async()=>{
+ for(const [xp,level] of [[0,1],[99,1],[100,2],[249,2],[250,3],[449,3],[450,4],[699,4],[700,5]])
+  assert.equal((await q('select sj_private.level_for_xp($1) level',[xp]))[0].level,level);
+ await q('begin');
+ try {
+  await q('update public.profiles set xp=249,level=3,rating=123 where id=$1',[ids[0]]);
+  await q('update public.profiles set level=sj_private.level_for_xp(xp) where id=$1',[ids[0]]);
+  assert.deepEqual((await q('select xp,level,trophies from public.profiles where id=$1',[ids[0]]))[0],
+   {xp:249,level:2,trophies:123});
+ } finally { await q('rollback'); }
+});
 await test('Seeded admin recognized; normal account rejected',async()=>{
  assert.equal((await asUser(2,()=>q('select public.get_my_role() role')))[0].role,'super_admin');
  assert.equal((await asUser(0,()=>q('select public.get_my_role() role')))[0].role,'student');
@@ -118,6 +133,7 @@ await test('Two humans match exactly once and answer keys stay hidden',async()=>
  await q('select sj_private.tick_match($1)',[mid]);
  const state=(await asUser(0,()=>q('select public.get_match_state($1) data',[mid])))[0].data;
  assert.equal(state.question.correct_option_id,undefined);assert.equal(state.result,null);
+ assert.equal(state.question.subject_name,'Quantitative Aptitude');
 });
 const photoFixture='iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAAAAAB3tzPbAAAAO0lEQVR4nO3BMQEAAADCoPVPbQ0PoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgHcDkMAAAZ1kLtkAAAAASUVORK5CYII=';
 const savePortrait=(i,portrait,data=null)=>asUser(i,()=>q('select public.save_profile_portrait($1,$2,$3,$4)',[`Student ${i}`,`+91987654321${i}`,portrait,data]));
@@ -264,6 +280,51 @@ await test('Daily users share identical ordered question set; second start resum
  await asUser(0,()=>rejects(()=>q('select public.get_daily_question($1,3)',[d1.attempt_id]),/QUESTION_NOT_ACTIVE/));
  await asUser(1,()=>rejects(()=>q('select public.submit_daily_answer($1,0,null)',[d1.attempt_id]),/ATTEMPT_NOT_FOUND/));
 });
+await test('Human and bot battles use four distinct 40-second Maths questions; Daily stays mixed',async()=>{
+ const bot=(await q("select id from public.matches where mode='bot' and status='pending' limit 1"))[0].id;
+ for(const matchId of [mid,bot]) {
+  const rounds=await q(`select mq.question_id,c.slug,(mq.snapshot->>'time_limit_seconds')::int seconds
+    from public.match_questions mq join public.questions question on question.id=mq.question_id
+    join public.categories c on c.id=question.category_id
+    where mq.match_id=$1 order by mq.question_index`,[matchId]);
+  assert.equal(rounds.length,4);
+  assert.equal(new Set(rounds.map(round=>round.question_id)).size,4);
+  assert.ok(rounds.every(round=>round.slug==='quant'&&round.seconds===40));
+ }
+ const daily=await q(`select c.slug,(dq.snapshot->>'time_limit_seconds')::int seconds
+   from public.daily_challenge_questions dq join public.daily_challenges dc on dc.id=dq.challenge_id
+   join public.questions question on question.id=dq.question_id
+   join public.categories c on c.id=question.category_id
+   where dc.challenge_date=(now() at time zone 'Asia/Kolkata')::date
+   order by dq.question_index`);
+ assert.deepEqual(daily.map(round=>[round.slug,round.seconds]),
+   [['reasoning',40],['general-awareness',15],['quant',40],['english',15]]);
+});
+await test('Battle subject label follows Supabase category name without a new client query',async()=>{
+ await q('begin');
+ try {
+  await q("update public.categories set name='Mathematics' where slug='quant'");
+  const state=(await asUser(0,()=>q('select public.get_match_state($1) data',[mid])))[0].data;
+  assert.equal(state.question.subject_name,'Mathematics');
+  assert.equal(state.question.correct_option_id,undefined);
+ } finally {await q('rollback');}
+});
+await test('Maths battles stay unique when a learner cycle reshuffles mid-match',async()=>{
+ const subject=(await q("select id from public.categories where slug='quant'"))[0].id;
+ const bot=(await q("select player2_id id from public.matches where mode='bot' limit 1"))[0].id;
+ await q('begin');
+ try {
+  for(const player of [ids[0],ids[1]]) {
+   await q('select sj_private.prepare_question_cycle($1,$2)',[player,subject]);
+   await q('update public.player_question_cycles set next_index=cardinality(question_ids)-2 where user_id=$1 and category_id=$2',[player,subject]);
+  }
+  for(const [opponent,mode] of [[bot,'bot'],[ids[1],'live']]) {
+   const match=(await q('select sj_private.new_match($1,$2,null,null,$3) id',[ids[0],opponent,mode]))[0].id;
+   const questions=await q('select question_id from public.match_questions where match_id=$1',[match]);
+   assert.equal(new Set(questions.map(row=>row.question_id)).size,4);
+  }
+ } finally {await q('rollback');}
+});
 await test('Admin role changes, viewer restrictions and settings validation',async()=>{
  await asUser(2,()=>q("select public.admin_set_role('student1@example.com','viewer',true)"));
  assert.equal((await asUser(1,()=>q('select public.get_my_role() role')))[0].role,'viewer');
@@ -291,9 +352,76 @@ await test('A complete bot battle advances server-side and awards rewards once',
  await q("update public.matches set next_tick_at=now()-interval '1 second' where id=$1",[bot]);
  await q('select sj_private.tick_match($1)',[bot]);
  assert.equal((await q('select status from public.matches where id=$1',[bot]))[0].status,'completed');
- assert.ok((await q('select xp_gained from public.match_players where match_id=$1 and user_id=$2',[bot,ids[0]]))[0].xp_gained>=40);
+ const botAward=(await q('select xp_gained from public.match_players where match_id=$1 and user_id=$2',[bot,ids[0]]))[0].xp_gained;
+ assert.ok([17,24,32].includes(botAward));
  const payout=(await q('select result,rating_before,rating_after from public.match_players where match_id=$1 and user_id=$2',[bot,ids[0]]))[0];
  assert.equal(payout.rating_after,Math.max(0,payout.rating_before+(payout.result==='win'?15:payout.result==='loss'?-5:0)));
+});
+await test('New match XP uses the same win, draw, and loss formula against people and bots',async()=>{
+ await q('begin');
+ try {
+  const bot=(await q('select id from public.profiles where is_bot limit 1'))[0].id;
+  for(const [mode,opponent] of [['live',ids[1]],['bot',bot]]) {
+   for(const [outcome,expected] of [['win',32],['draw',24],['loss',17]]) {
+    const mid=(await q('select sj_private.new_match($1,$2,null,null,$3) id',[ids[0],opponent,mode]))[0].id;
+    const rounds=await q("select question_index,(snapshot->>'correct_option_id')::uuid option_id from public.match_questions where match_id=$1 order by question_index",[mid]);
+    assert.equal(rounds.length,4);
+    for(const round of rounds) {
+     await q('insert into public.match_answers(match_id,question_index,user_id,option_id,is_correct,response_ms,points) values($1,$2,$3,$4,true,1000,2)',
+      [mid,round.question_index,ids[0],round.option_id]);
+     if(outcome==='draw') await q('insert into public.match_answers(match_id,question_index,user_id,option_id,is_correct,response_ms,points) values($1,$2,$3,$4,true,1000,2)',
+      [mid,round.question_index,opponent,round.option_id]);
+    }
+    const before=(await q('select xp,trophies from public.profiles where id=$1',[ids[0]]))[0];
+    await q('select sj_private.finalize_match($1,$2)',[mid,outcome==='draw'?null:outcome==='win'?ids[0]:opponent]);
+    const award=(await q('select xp_gained,result from public.match_players where match_id=$1 and user_id=$2',[mid,ids[0]]))[0];
+    assert.deepEqual(award,{xp_gained:expected,result:outcome});
+    const after=(await q('select xp,trophies,level from public.profiles where id=$1',[ids[0]]))[0];
+    assert.equal(after.xp,before.xp+expected);
+    assert.equal(after.level,(await q('select sj_private.level_for_xp($1) level',[after.xp]))[0].level);
+    assert.equal(after.trophies,Math.max(0,before.trophies+(outcome==='win'?15:outcome==='loss'?-5:0)));
+    await q('select sj_private.finalize_match($1,$2)',[mid,ids[0]]);
+    assert.deepEqual((await q('select xp,trophies,level from public.profiles where id=$1',[ids[0]]))[0],after);
+   }
+  }
+ } finally { await q('rollback'); }
+});
+await test('Zero-correct battles award only the win, draw, or loss base XP',async()=>{
+ await q('begin');
+ try {
+  for(const [outcome,expected] of [['win',20],['draw',12],['loss',5]]) {
+   const mid=(await q("select sj_private.new_match($1,$2,null,null,'live') id",[ids[0],ids[1]]))[0].id;
+   await q('select sj_private.finalize_match($1,$2)',[mid,outcome==='draw'?null:outcome==='win'?ids[0]:ids[1]]);
+   assert.equal((await q('select xp_gained from public.match_players where match_id=$1 and user_id=$2',[mid,ids[0]]))[0].xp_gained,expected);
+  }
+ } finally { await q('rollback'); }
+});
+await test('Daily XP is returned by both RPCs, awarded once, and practice awards none',async()=>{
+ await q('begin');
+ try {
+  await asUser(3,()=>q("select public.complete_profile('XP Test Learner','+919876543213')"));
+  const challenge=(await q("select id from public.daily_challenges where challenge_date=(now() at time zone 'Asia/Kolkata')::date"))[0].id;
+  const aid=(await q('insert into public.daily_attempts(challenge_id,user_id) values($1,$2) returning id',[challenge,ids[3]]))[0].id;
+  for(const round of await q('select question_index from public.daily_challenge_questions where challenge_id=$1 order by question_index',[challenge]))
+   await q('insert into public.daily_attempt_answers(attempt_id,question_index,is_correct,response_ms,points) values($1,$2,true,1000,10)',[aid,round.question_index]);
+  const before=(await q('select xp,trophies from public.profiles where id=$1',[ids[3]]))[0];
+  const first=(await asUser(3,()=>q('select public.finish_daily_attempt($1) data',[aid])))[0].data;
+  assert.equal(first.xp_gained,24);
+  assert.equal(first.correct_count,4);
+  const resumed=(await asUser(3,()=>q('select public.start_daily_attempt() data')))[0].data;
+  assert.equal(resumed.xp_gained,24);
+  const after=(await q('select xp,trophies,level from public.profiles where id=$1',[ids[3]]))[0];
+  assert.equal(after.xp,before.xp+24);
+  assert.equal(after.trophies,before.trophies);
+  assert.equal(after.level,(await q('select sj_private.level_for_xp($1) level',[after.xp]))[0].level);
+  assert.equal((await asUser(3,()=>q('select public.finish_daily_attempt($1) data',[aid])))[0].data.xp_gained,24);
+  assert.equal((await q('select xp from public.profiles where id=$1',[ids[3]]))[0].xp,after.xp);
+  const practiceId=(await q("select id from public.practice_attempts where user_id=$1 limit 1",[ids[0]]))[0].id;
+  await q("update public.practice_attempts set answers=(select jsonb_agg('{}'::jsonb) from jsonb_array_elements(questions)) where id=$1",[practiceId]);
+  const practiceXp=(await q('select xp from public.profiles where id=$1',[ids[0]]))[0].xp;
+  await asUser(0,()=>q('select public.finish_practice($1)',[practiceId]));
+  assert.equal((await q('select xp from public.profiles where id=$1',[ids[0]]))[0].xp,practiceXp);
+ } finally { await q('rollback'); }
 });
 await test('An early answer unlocks exactly one daily question, resumes there, and retries once',async()=>{
  const attempt=(await asUser(1,()=>q('select public.start_daily_attempt() data')))[0].data;
@@ -384,10 +512,12 @@ await test('Import normalizes names, publishes immediately, and rejects unknown 
 });
 await test('Expired daily attempts auto-submit once and award a streak',async()=>{
  const aid=(await q('select id from public.daily_attempts where user_id=$1',[ids[0]]))[0].id;
+ const before=(await q('select xp from public.profiles where id=$1',[ids[0]]))[0].xp;
  await q("update public.daily_attempts set started_at=now()-interval '1 hour' where id=$1",[aid]);
  await q('select sj_private.daily_maintenance()');
  assert.ok((await q('select completed_at from public.daily_attempts where id=$1',[aid]))[0].completed_at);
  const p=(await q('select xp,current_streak from public.profiles where id=$1',[ids[0]]))[0];assert.equal(p.current_streak,1);
+ assert.equal(p.xp,before+12);
  await q('select sj_private.daily_maintenance()');assert.equal((await q('select xp from public.profiles where id=$1',[ids[0]]))[0].xp,p.xp);
 });
 await test('Missing tomorrow content cannot block expired Daily attempts',async()=>{

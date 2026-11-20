@@ -10,6 +10,7 @@ import '../../../shared/rewards.dart';
 import '../../../shared/campus_widgets.dart';
 import '../../auth/data/session.dart';
 import '../../practice/data/quiz_repository.dart';
+import '../domain/level_progress.dart';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -59,6 +60,7 @@ class _ProfileState extends ConsumerState<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider), profile = session.profile!;
+    final levelProgress = LevelProgress.fromTotalXp(profile.xp);
     return Scaffold(
       appBar: ArenaBar(
         title: const Text('Your progress'),
@@ -135,20 +137,20 @@ class _ProfileState extends ConsumerState<ProfileScreen> {
                     runSpacing: 4,
                     children: [
                       Text(
-                        'Level ${profile.level}',
+                        'Level ${levelProgress.level}',
                         style: context.type.titleSmall?.copyWith(
                           color: Colors.white,
                         ),
                       ),
                       Text(
-                        '${profile.xp % 100}/100 XP',
+                        '${levelProgress.earnedInLevel}/${levelProgress.requiredForNext} XP',
                         style: const TextStyle(color: arenaMint),
                       ),
                     ],
                   ),
                   const SizedBox(height: 8),
                   LinearProgressIndicator(
-                    value: (profile.xp % 100) / 100,
+                    value: levelProgress.fraction,
                     color: arenaMint,
                     backgroundColor: Colors.white24,
                     borderRadius: BorderRadius.circular(4),
