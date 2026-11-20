@@ -54,7 +54,9 @@ class _BattleState extends ConsumerState<BattleScreen>
       'opponent_answered',
       'match_end',
     ]) {
-      channel!.onBroadcast(event: event, callback: (_) => refresh());
+      channel!.onBroadcast(event: event, callback: (_) {
+        if (mounted && active) unawaited(refresh());
+      });
     }
     channel!.subscribe((status, _) {
       if (status == RealtimeSubscribeStatus.subscribed && mounted && active) {
@@ -99,7 +101,7 @@ class _BattleState extends ConsumerState<BattleScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     active = state == AppLifecycleState.resumed;
-    if (active) refresh();
+    if (active) unawaited(refresh());
   }
 
   Future<void> heartbeat() async {

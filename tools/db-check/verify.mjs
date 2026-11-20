@@ -797,6 +797,61 @@ await test('Lightweight heartbeat is participant-only and reports state changes'
  assert.equal((await q('select count(*)::int n from public.match_answers where match_id=$1',[match]))[0].n,2);
  assert.equal((await q('select phase from public.matches where id=$1',[match]))[0].phase,'result');
 });
+await test('Match countdown and heartbeats start after question preparation',async()=>{
+ const bot=(await q("insert into public.profiles(full_name,is_bot,rating,level,avatar_url) values('Preparation Bot',true,1000,8,'color:#5B4CFF') returning id"))[0].id;
+ await q('truncate realtime.sent');
+ await q(`create function sj_private.delay_match_question_for_test() returns trigger language plpgsql as $$
+  begin perform pg_sleep(0.12); return new; end $$`);
+ await q(`create trigger delay_match_question_for_test before insert on public.match_questions
+  for each row execute function sj_private.delay_match_question_for_test()`);
+ let match;
+ try { match=(await q("select sj_private.new_match($1,$2,null,null,'bot') id",[ids[3],bot]))[0].id; }
+ finally {
+  await q('drop trigger delay_match_question_for_test on public.match_questions');
+  await q('drop function sj_private.delay_match_question_for_test()');
+ }
+ const timestamps=(await q(`select m.started_at,m.next_tick_at,p.heartbeat_at,
+   extract(epoch from m.started_at-clock_timestamp()) as countdown_left,
+   extract(epoch from clock_timestamp()-p.heartbeat_at) as heartbeat_age
+   from public.matches m join public.match_players p on p.match_id=m.id
+   where m.id=$1 and p.user_id=$2`,[match,ids[3]]))[0];
+ assert.ok(Number(timestamps.countdown_left)>2.5,'the 3-second countdown must not be consumed by question preparation');
+ assert.ok(Number(timestamps.heartbeat_age)<0.5,'the first heartbeat must be fresh when the match is ready');
+ assert.equal(new Date(timestamps.started_at).getTime(),new Date(timestamps.next_tick_at).getTime());
+ assert.equal((await q("select count(*)::int n from realtime.sent where topic=$1",[`data:user:${ids[3]}`]))[0].n,0,
+  'creating a match must not trigger an unrelated full session refresh');
+ assert.ok((await q("select count(*)::int n from realtime.sent where topic='data:admin'"))[0].n>0,
+  'staff dashboard invalidation remains available');
+});
+await test('Reconnected player continues; one or both stale players resolve correctly',async()=>{
+ const players=[];
+ for(let i=0;i<2;i++) {
+  const player=(await q(`insert into auth.users(id,email,email_confirmed_at,raw_app_meta_data)
+   values(gen_random_uuid(),$1,now(),'{"provider":"google"}') returning id`,[`reconnect${i}@example.com`]))[0].id;
+  await q('update public.profiles set full_name=$2,phone=$3,profile_completed=true where id=$1',
+   [player,`Reconnect player ${i}`,`+91987654900${i}`]);
+  players.push(player);
+ }
+ const match=(await q("select sj_private.new_match($1,$2,null,null,'live') id",players))[0].id;
+ await q("update public.match_players set heartbeat_at=now()-interval '14 seconds' where match_id=$1",[match]);
+ // A direct participant heartbeat is the same server path used on resume.
+ await db.exec(`set role authenticated; set request.jwt.claim.sub='${players[0]}';`);
+ try { await q('select public.heartbeat_match($1)',[match]); }
+ finally { await db.exec('reset role'); }
+ await q('select sj_private.tick_match($1)',[match]);
+ assert.equal((await q('select status from public.matches where id=$1',[match]))[0].status,'pending');
+ await q("update public.match_players set heartbeat_at=now()-interval '16 seconds' where match_id=$1 and user_id=$2",[match,players[1]]);
+ await q('select sj_private.tick_match($1)',[match]);
+ const oneStale=(await q('select status,winner_id from public.matches where id=$1',[match]))[0];
+ assert.equal(oneStale.status,'completed');
+ assert.equal(oneStale.winner_id,players[0]);
+ const both=(await q("select sj_private.new_match($1,$2,null,null,'live') id",players))[0].id;
+ const ratings=await q('select id,rating from public.profiles where id=any($1::uuid[]) order by id',[players]);
+ await q("update public.match_players set heartbeat_at=now()-interval '16 seconds' where match_id=$1",[both]);
+ await q('select sj_private.tick_match($1)',[both]);
+ assert.equal((await q('select status from public.matches where id=$1',[both]))[0].status,'abandoned');
+ assert.deepEqual(await q('select id,rating from public.profiles where id=any($1::uuid[]) order by id',[players]),ratings);
+});
 await test('Thirty scheduled matches wake only when due',async()=>{
  await q('begin');
  try {
