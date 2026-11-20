@@ -25,7 +25,7 @@ class _MatchmakingState extends ConsumerState<MatchmakingScreen> {
   Timer? timer;
   RealtimeChannel? channel;
   String? error;
-  bool cancelled = false, busy = false, navigated = false;
+  bool cancelled = false, busy = false, navigated = false, queueJoined = false;
   late QuizRepository repo;
   late AudioController audio;
   @override
@@ -77,15 +77,24 @@ class _MatchmakingState extends ConsumerState<MatchmakingScreen> {
     if (busy || cancelled || navigated) return;
     busy = true;
     try {
-      final result = await repo.rpc('join_matchmaking', {
-        'category_id': widget.category == 'mixed' ? null : widget.category,
-        'subtopic_id': widget.subtopic,
-      });
+      final result = queueJoined
+          ? await repo.rpc('get_matchmaking_status')
+          : await repo.rpc('join_matchmaking', {
+              'category_id': widget.category == 'mixed' ? null : widget.category,
+              'subtopic_id': widget.subtopic,
+            });
       if (result['match_id'] != null) {
         openMatch(result['match_id']);
         return;
       }
       if (!mounted || cancelled || navigated) return;
+      if (result['joined_at'] == null) {
+        // A stale queue entry was removed while Realtime was disconnected.
+        // Join again on the next fallback check.
+        queueJoined = false;
+        return;
+      }
+      queueJoined = true;
       if (error != null) setState(() => error = null);
       final joined = DateTime.parse(result['joined_at']);
       final server = DateTime.parse(result['server_now']);

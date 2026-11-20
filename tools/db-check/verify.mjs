@@ -823,6 +823,27 @@ await test('Match countdown and heartbeats start after question preparation',asy
  assert.ok((await q("select count(*)::int n from realtime.sent where topic='data:admin'"))[0].n>0,
   'staff dashboard invalidation remains available');
 });
+await test('Matchmaking fallback reads only the caller state without queue writes',async()=>{
+ const player=(await q(`insert into auth.users(id,email,email_confirmed_at,raw_app_meta_data)
+  values(gen_random_uuid(),'status-player@example.com',now(),'{"provider":"google"}') returning id`))[0].id;
+ await q("update public.profiles set full_name='Status player',phone='+919876549099',profile_completed=true where id=$1",[player]);
+ const asPlayer=async fn=>{
+  await db.exec(`set role authenticated; set request.jwt.claim.sub='${player}';`);
+  try { return await fn(); } finally { await db.exec('reset role'); }
+ };
+ const empty=(await asPlayer(()=>q('select public.get_matchmaking_status() data')))[0].data;
+ assert.equal(empty.match_id,null);
+ assert.equal(empty.joined_at,null);
+ await q('insert into public.matchmaking_queue(user_id,rating) values($1,1000)',[player]);
+ const queued=(await asPlayer(()=>q('select public.get_matchmaking_status() data')))[0].data;
+ assert.ok(queued.joined_at);
+ assert.equal(queued.search_timeout_seconds,10);
+ assert.equal((await q("select count(*)::int n from sj_private.rate_limits where user_id=$1 and action='join'",[player]))[0].n,0);
+ assert.equal((await q('select count(*)::int n from public.matchmaking_queue where user_id=$1',[player]))[0].n,1);
+ const bot=(await q("insert into public.profiles(full_name,is_bot,rating,level,avatar_url) values('Status Bot',true,1000,8,'color:#5B4CFF') returning id"))[0].id;
+ const match=(await q("select sj_private.new_match($1,$2,null,null,'bot') id",[player,bot]))[0].id;
+ assert.equal((await asPlayer(()=>q('select public.get_matchmaking_status() data')))[0].data.match_id,match);
+});
 await test('Reconnected player continues; one or both stale players resolve correctly',async()=>{
  const players=[];
  for(let i=0;i<2;i++) {
